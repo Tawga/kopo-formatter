@@ -42,6 +42,11 @@
                     "description": "Align PIC and VALUE clauses in the Data Division to a consistent column"
                 }
             }
+        },
+        "formatters": {
+            "language": "cobol",
+            "displayName": "KOPO Cobol Formatter",
+            "id": "kopo"
         }
     },
     "scripts": {
