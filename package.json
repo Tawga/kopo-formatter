@@ -14,10 +14,35 @@
     "contributes": {
         "commands": [
             {
-                "command": "kopo-formatter.helloWorld",
-                "title": "Hello World"
+                "command": "kopo-formatter.formatDocument",
+                "title": "Hello Cobol Document"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "KOPO formatter",
+            "properties": {
+                "kopo-formatter.indentationSpaces": {
+                    "type": "number",
+                    "default": 3,
+                    "description": "Number of spaces to use for one level of indentation"
+                },
+                "kopo-formatter.addEmptyLineAfterExit": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Insert a blank line after an EXIT statement"
+                },
+                "kopo-formatter.evaluateIndentWhen": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Indent WHEN clauses inside an EVALUATE block"
+                },
+                "kopo-formatter.alignPicClauses": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Align PIC and VALUE clauses in the Data Division to a consistent column"
+                }
+            }
+        }
     },
     "scripts": {
         "lint": "eslint .",
