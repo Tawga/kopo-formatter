@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-const vscode = require('vscode');
+const vscode = require("vscode");
+const CobolFormatter = require("./src/CobolFormatter");
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -9,28 +10,50 @@ const vscode = require('vscode');
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
+    const disposable = vscode.commands.registerCommand(
+        "kopo-formatter.formatDocument",
+        () => {
+            const { activeTextEditor } = vscode.window;
+            if (
+                activeTextEditor &&
+                activeTextEditor.document.languageId === "cobol"
+            ) {
+                const settings =
+                    vscode.workspace.getConfiguration("cobol-formatter");
+                const formatter = new CobolFormatter({
+                    indentationSpaces: settings.get("indentationSpaces") || 3,
+                    addEmptyLineAfterExit:
+                        settings.get("addEmptyLineAfterExit") || true,
+                    evaluateIndentWhen:
+                        settings.get("evaluateIndentWhen") || true,
+                    alignPicClauses: settings.get("alignPicClauses") || true,
+                });
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "kopo-formatter" is now active!');
+                const text = activeTextEditor.document.getText();
+                const formattedText = formatter.format(text);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with  registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('kopo-formatter.helloWorld', function () {
-		// The code you place here will be executed every time your command is executed
+                const edit = new vscode.WorkspaceEdit();
+                const wholeDocument = new vscode.Range(
+                    activeTextEditor.document.positionAt(0),
+                    activeTextEditor.document.positionAt(text.length)
+                );
+                edit.replace(
+                    activeTextEditor.document.uri,
+                    wholeDocument,
+                    formattedText
+                );
+                vscode.workspace.applyEdit(edit);
+            }
+        }
+    );
 
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from kopo-formatter!');
-	});
-
-	context.subscriptions.push(disposable);
+    context.subscriptions.push(disposable);
 }
 
 // This method is called when your extension is deactivated
 function deactivate() {}
 
 module.exports = {
-	activate,
-	deactivate
-}
+    activate,
+    deactivate,
+};
