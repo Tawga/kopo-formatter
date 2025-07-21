@@ -4,7 +4,7 @@
     "description": "Visual Studio Code extension to format Cobol files",
     "version": "0.0.1",
     "engines": {
-        "vscode": "^1.85.0"
+        "vscode": "^1.102.0"
     },
     "categories": [
         "Formatters"
@@ -57,7 +57,8 @@
     "scripts": {
         "lint": "eslint .",
         "pretest": "npm run lint",
-        "test": "vscode-test"
+        "test": "vscode-test",
+        "build": "vsce package --out build"
     },
     "devDependencies": {
         "@types/mocha": "^10.0.10",

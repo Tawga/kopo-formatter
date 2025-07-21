@@ -1,65 +1,92 @@
-# kopo-formatter README
+# KOPO Formatter for COBOL
 
-This is the README for your extension "kopo-formatter". After writing up a brief description, we recommend including the following sections.
+An opinionated but configurable code formatter for COBOL, designed to enforce consistent styling and indentation within Visual Studio Code. This extension helps maintain clean, readable, and standardized COBOL source code.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+This formatter provides a wide range of features to automatically clean up your COBOL files:
 
-For example if there is an image subfolder under your extension project workspace:
+-   **Automatic Indentation**: Correctly indents procedural blocks, including:
+    -   `IF...ELSE...END-IF`
+    -   `EVALUATE...WHEN...END-EVALUATE`
+    -   `READ...AT END...NOT AT END...END-READ`
+    -   `PERFORM` loops (`UNTIL`, `VARYING`, etc.)
+    -   Multi-line `STRING` statements.
+-   **Data Division Alignment**:
+    -   Optionally aligns `PIC`, `PICTURE`, and `VALUE` clauses in the `FILE SECTION`, `WORKING-STORAGE SECTION`, and `LINKAGE SECTION` to a consistent column for enhanced readability.
+    -   Special alignment for `VALUE` clauses on Level 78 and 88 items.
+-   **COBOL Area Formatting**: Correctly places `DIVISION`, `SECTION`, and paragraph headers in Area A, and statements in Area B.
+-   **Whitespace Control**:
+    -   Converts all tabs to spaces.
+    -   Removes all trailing whitespace from lines.
+-   **Code Structure**:
+    -   Optionally adds a blank line after `EXIT.` statements to improve visual separation.
 
-\!\[feature X\]\(images/feature-x.png\)
+## Installation
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+This extension is not yet published on the VS Code Marketplace. To install it, you must build the `.vsix` file from the source and install it manually.
 
-## Requirements
+1.  Build the extension by following the steps in the [Building from Source](#building-from-source) section below. This will create a `kopo-formatter-x.x.x.vsix` file in the `build` directory.
+2.  Open Visual Studio Code.
+3.  Go to the **Extensions** view (Ctrl+Shift+X).
+4.  Click the **three dots (...)** at the top-right of the Extensions view.
+5.  Select **"Install from VSIX..."**.
+6.  Navigate to the `build` folder in the project and select the `.vsix` file.
+7.  Reload VS Code when prompted.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## Usage
+
+Once installed, the formatter integrates directly with VS Code's built-in formatting capabilities.
+
+-   **Format Document Command**:
+    -   Open a COBOL file (`.cbl`, `.cob`, etc.).
+    -   Open the Command Palette (Ctrl+Shift+P).
+    -   Type "Format Document" and press Enter.
+    -   If prompted, select "KOPO Cobol Formatter" as the default formatter for COBOL files.
+-   **Keyboard Shortcut**:
+    -   Press `Shift+Alt+F` (Windows/Linux) or `Shift+Option+F` (Mac).
+-   **Format on Save**:
+    -   To automatically format your files every time you save (not recommended), add the following to your VS Code `settings.json` file:
+        ```json
+        "[COBOL]": {
+            "editor.formatOnSave": true
+        }
+        ```
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+This extension can be configured in your VS Code settings (`settings.json`) or through the Settings UI. All settings are prefixed with `kopo-formatter`.
 
-For example:
+-   `kopo-formatter.indentationSpaces` (default: `3`)
 
-This extension contributes the following settings:
+    -   The number of spaces to use for a single level of indentation.
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+-   `kopo-formatter.addEmptyLineAfterExit` (default: `true`)
 
-## Known Issues
+    -   If `true`, an empty line will be inserted after an `EXIT.` statement, unless one already exists.
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+-   `kopo-formatter.evaluateIndentWhen` (default: `true`)
 
-## Release Notes
+    -   If `true`, `WHEN` and `WHEN OTHER` clauses will be indented one level inside an `EVALUATE` block.
 
-Users appreciate release notes as you update your extension.
+-   `kopo-formatter.alignPicClauses` (default: `true`)
+    -   If `true`, the formatter will align `PIC` and `VALUE` clauses in the `FILE SECTION`, `WORKING-STORAGE SECTION`, and `LINKAGE SECTION` to a consistent column. This also affects `VALUE` clauses for Level 78 and 88 items.
 
-### 1.0.0
+## Building from Source
 
-Initial release of ...
+To build the extension yourself, you need Node.js and npm installed.
 
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+1.  **Clone the repository**:
+    ```bash
+    git clone <repository-url>
+    cd kopo-formatter
+    ```
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+3.  **Run the build script**:
+    `bash
+npm run build
+`
+    This will create the installable `.vsix` file in the `build/` directory.
