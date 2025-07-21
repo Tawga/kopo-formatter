@@ -1,6 +1,10 @@
 {
     "name": "kopo-formatter",
     "displayName": "kopo-formatter",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Tawga/kopo-formatter"
+    },
     "description": "Visual Studio Code extension to format Cobol files",
     "version": "0.0.1",
     "engines": {
