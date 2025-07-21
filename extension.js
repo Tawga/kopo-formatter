@@ -10,12 +10,16 @@ const CobolFormatter = require("./src/CobolFormatter");
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
+    console.log("Activation...");
+
     const disposable = vscode.languages.registerDocumentFormattingEditProvider(
-        "cobol",
+        "COBOL",
         {
             provideDocumentFormattingEdits(document) {
+                console.log("Formatting document");
+
                 const settings =
-                    vscode.workspace.getConfiguration("cobol-formatter");
+                    vscode.workspace.getConfiguration("kopo-formatter");
 
                 const formatter = new CobolFormatter({
                     indentationSpaces: settings.get("indentationSpaces"),
@@ -27,17 +31,28 @@ function activate(context) {
                 });
 
                 const text = document.getText();
-                const formattedText = formatter.format(text);
-                const wholeDocument = new vscode.Range(
-                    document.positionAt(0),
-                    document.positionAt(text.length)
-                );
+                try {
+                    const formattedText = formatter.format(text);
+                    const wholeDocument = new vscode.Range(
+                        document.positionAt(0),
+                        document.positionAt(text.length)
+                    );
 
-                return [vscode.TextEdit.replace(wholeDocument, formattedText)];
+                    return [
+                        vscode.TextEdit.replace(wholeDocument, formattedText),
+                    ];
+                } catch (err) {
+                    vscode.window.showErrorMessage(
+                        "KOPO Formatter failed to format the document."
+                    );
+                    console.error(err);
+                    return null;
+                }
             },
         }
     );
 
+    console.log("Formatter activated");
     context.subscriptions.push(disposable);
 }
 

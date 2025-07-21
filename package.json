@@ -4,12 +4,15 @@
     "description": "Visual Studio Code extension to format Cobol files",
     "version": "0.0.1",
     "engines": {
-        "vscode": "^1.102.0"
+        "vscode": "^1.85.0"
     },
     "categories": [
-        "Other"
+        "Formatters"
     ],
-    "activationEvents": [],
+    "activationEvents": [
+        "onLanguage:COBOL",
+        "onLanguage:cobol"
+    ],
     "main": "./extension.js",
     "contributes": {
         "commands": [
@@ -43,11 +46,13 @@
                 }
             }
         },
-        "formatters": {
-            "language": "cobol",
-            "displayName": "KOPO Cobol Formatter",
-            "id": "kopo"
-        }
+        "formatters": [
+            {
+                "language": "COBOL",
+                "displayName": "KOPO Cobol Formatter",
+                "id": "kopo"
+            }
+        ]
     },
     "scripts": {
         "lint": "eslint .",
