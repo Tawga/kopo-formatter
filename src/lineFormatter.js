@@ -3,6 +3,10 @@
  * @description Contains the logic for formatting a single line of COBOL code.
  */
 
+/**
+ * @typedef {import('./CobolFormatter')} CobolFormatter
+ */
+
 const {
     SEQ_NUMBER_END,
     INDICATOR_COL,
@@ -14,6 +18,7 @@ const {
     INDENT_START_KEYWORDS,
     INDENT_END_KEYWORDS,
     INDENT_ELSE_KEYWORDS,
+    INDENT_SUB_CLAUSES,
 } = require("./constants");
 
 /**
@@ -73,7 +78,9 @@ const formatLine = (formatterContext, line, index, allLines) => {
 
         if (isCopyStatement) {
             isAreaAKeyword = false;
-            currentIndent = 0;
+            currentIndent =
+                formatterContext.dataLevelStack.length *
+                formatterContext.indentationSpaces;
         } else if (levelMatch) {
             const formatted = formatDataDescriptionLine(
                 formatterContext,
@@ -206,36 +213,40 @@ const formatDataDescriptionLine = (ctx, processedLine, levelMatch) => {
     let areaA = "";
     let aligned = false;
 
-    if (
-        (level === 78 || level === 88) &&
-        valueIndex > -1 &&
-        ctx.alignmentColumn > 0
-    ) {
-        const preValuePart = processedLine.substring(0, valueIndex);
-        const postValuePart = processedLine.substring(valueIndex).trim();
-        const normalizedPreValue = preValuePart.replace(/\s+/g, " ");
-        let lineStart = " ".repeat(currentIndent) + normalizedPreValue;
-        const currentLength = AREA_A_START - 1 + lineStart.length;
-        const paddingSize = ctx.alignmentColumn - currentLength;
-        const padding = " ".repeat(Math.max(2, paddingSize));
-        areaA = lineStart + padding + postValuePart;
-        aligned = true;
-    } else if (
-        (ctx.inFileSystem ||
-            ctx.inWorkingStorageSection ||
-            ctx.inLinkageSection) &&
-        picIndex > -1 &&
-        ctx.alignmentColumn > 0
-    ) {
-        const prePicPart = processedLine.substring(0, picIndex);
-        const postPicPart = processedLine.substring(picIndex).trim();
-        const normalizedPrePic = prePicPart.replace(/\s+/g, " ");
-        let lineStart = " ".repeat(currentIndent) + normalizedPrePic;
-        const currentLength = AREA_A_START - 1 + lineStart.length;
-        const paddingSize = ctx.alignmentColumn - currentLength;
-        const padding = " ".repeat(Math.max(2, paddingSize));
-        areaA = lineStart + padding + postPicPart;
-        aligned = true;
+    let parentIndent =
+        ctx.dataLevelStack.length > 1
+            ? (ctx.dataLevelStack.length - 2) * ctx.indentationSpaces
+            : 0;
+    const alignmentKey = level === 88 ? parentIndent : currentIndent;
+    const alignmentColumn = ctx.alignmentMap.get(alignmentKey);
+
+    if (alignmentColumn) {
+        if ((level === 78 || level === 88) && valueIndex > -1) {
+            const preValuePart = processedLine.substring(0, valueIndex);
+            const postValuePart = processedLine.substring(valueIndex).trim();
+            const normalizedPreValue = preValuePart.replace(/\s+/g, " ");
+            let lineStart = " ".repeat(currentIndent) + normalizedPreValue;
+            const currentLength = AREA_A_START - 1 + lineStart.length;
+            const paddingSize = alignmentColumn - currentLength;
+            const padding = " ".repeat(Math.max(2, paddingSize));
+            areaA = lineStart + padding + postValuePart;
+            aligned = true;
+        } else if (
+            (ctx.inFileSystem ||
+                ctx.inWorkingStorageSection ||
+                ctx.inLinkageSection) &&
+            picIndex > -1
+        ) {
+            const prePicPart = processedLine.substring(0, picIndex);
+            const postPicPart = processedLine.substring(picIndex).trim();
+            const normalizedPrePic = prePicPart.replace(/\s+/g, " ");
+            let lineStart = " ".repeat(currentIndent) + normalizedPrePic;
+            const currentLength = AREA_A_START - 1 + lineStart.length;
+            const paddingSize = alignmentColumn - currentLength;
+            const padding = " ".repeat(Math.max(2, paddingSize));
+            areaA = lineStart + padding + postPicPart;
+            aligned = true;
+        }
     }
 
     if (!aligned) {
@@ -324,10 +335,11 @@ const formatProcedureLine = (
     const startKeyword = findKeyword(upperCaseLine, INDENT_START_KEYWORDS);
     const endKeyword = findKeyword(upperCaseLine, INDENT_END_KEYWORDS);
     const elseKeyword = findKeyword(upperCaseLine, INDENT_ELSE_KEYWORDS);
+    const subClauseKeyword = findKeyword(upperCaseLine, INDENT_SUB_CLAUSES);
+    const isWhenClause = findKeyword(upperCaseLine, ["WHEN", "WHEN OTHER"]);
 
     if (startKeyword === "EVALUATE") {
         ctx.isInEvaluateBlock = true;
-        ctx.isFirstWhenInBlock = true;
     }
 
     if (endKeyword) {
@@ -335,14 +347,8 @@ const formatProcedureLine = (
             ctx.paragraphBaseIndent,
             ctx.controlIndentLevel - 1
         );
-        if (endKeyword === "END-EVALUATE" && ctx.isInEvaluateBlock) {
-            ctx.controlIndentLevel = Math.max(
-                ctx.paragraphBaseIndent,
-                ctx.controlIndentLevel - 1
-            );
-        }
     } else if (elseKeyword) {
-        if (elseKeyword.startsWith("WHEN")) {
+        if (isWhenClause) {
             if (ctx.isInEvaluateBlock && !ctx.isFirstWhenInBlock) {
                 ctx.controlIndentLevel = Math.max(
                     ctx.paragraphBaseIndent,
@@ -365,6 +371,7 @@ const formatProcedureLine = (
             !startKeyword &&
             !endKeyword &&
             !elseKeyword &&
+            !subClauseKeyword &&
             !findKeyword(upperCaseLine, ["PERFORM"])
         ) {
             isAreaAKeyword = true;
@@ -374,15 +381,11 @@ const formatProcedureLine = (
         }
     }
 
-    let currentIndent;
+    let currentIndent = ctx.controlIndentLevel * ctx.indentationSpaces;
 
-    if (ctx.stringContinuationColumn > 0 && isContinuation) {
-        currentIndent = ctx.stringContinuationColumn - AREA_B_START;
-    } else {
-        currentIndent = ctx.controlIndentLevel * ctx.indentationSpaces;
-    }
-
-    if (startKeyword || elseKeyword) {
+    if (startKeyword) {
+        ctx.controlIndentLevel++;
+    } else if (elseKeyword || subClauseKeyword) {
         ctx.controlIndentLevel++;
     } else if (findKeyword(upperCaseLine, ["PERFORM"])) {
         const lineWithoutPeriod = upperCaseLine.replace(/\.\s*$/, "");
@@ -396,27 +399,12 @@ const formatProcedureLine = (
         }
     }
 
-    if (startKeyword === "STRING") {
-        const argStartIndex = processedLine.indexOf(" ");
-        if (argStartIndex > -1) {
-            const firstArgOffset = processedLine
-                .substring(argStartIndex)
-                .search(/\S/);
-            if (firstArgOffset > -1) {
-                const baseColumnForString = AREA_B_START + currentIndent;
-                ctx.stringContinuationColumn =
-                    baseColumnForString + argStartIndex + firstArgOffset;
-            }
-        }
-    }
-
-    if (elseKeyword && elseKeyword.startsWith("WHEN")) {
+    if (isWhenClause) {
         ctx.isFirstWhenInBlock = false;
     }
 
     if (isStatementTerminator) {
         ctx.controlIndentLevel = ctx.paragraphBaseIndent;
-        ctx.stringContinuationColumn = 0;
         ctx.isInEvaluateBlock = false;
     }
 

@@ -23,7 +23,7 @@ class CobolFormatter {
         this.inWorkingStorageSection = false;
         this.inLinkageSection = false;
         this.lastDataTextStartColumn = 0;
-        this.alignmentColumn = 0;
+        this.alignmentMap = new Map(); // Stores alignment columns for each indent level
         this.stringContinuationColumn = 0;
         this.isInEvaluateBlock = false;
         this.isFirstWhenInBlock = true;
@@ -39,7 +39,7 @@ class CobolFormatter {
 
         // Pass 1: Analyze for PIC/VALUE alignment if the setting is enabled
         if (this.alignPicClauses) {
-            this.alignmentColumn = analyzeForAlignment(
+            this.alignmentMap = analyzeForAlignment(
                 originalLines,
                 this.indentationSpaces
             );

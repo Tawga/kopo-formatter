@@ -50,10 +50,11 @@ const constants = {
         "COPY",
     ],
 
-    INDENT_START_KEYWORDS: ["IF", "READ", "EVALUATE", "STRING"],
+    INDENT_START_KEYWORDS: ["IF", "READ", "EVALUATE"], // STRING is handled separately now
 
     INDENT_END_KEYWORDS: ["END-IF", "END-PERFORM", "END-READ", "END-EVALUATE"],
 
+    // Clauses that de-indent themselves to the parent level
     INDENT_ELSE_KEYWORDS: [
         "ELSE",
         "WHEN OTHER",
@@ -61,6 +62,9 @@ const constants = {
         "NOT AT END",
         "NOT INVALID KEY",
     ],
+
+    // Clauses that do NOT de-indent themselves but indent their content
+    INDENT_SUB_CLAUSES: ["AT END", "INVALID KEY"],
 };
 
 module.exports = constants;

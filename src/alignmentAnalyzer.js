@@ -3,19 +3,38 @@
  * @description Analyzes the Data Division to determine alignment for PIC and VALUE clauses.
  */
 
-const { AREA_A_START } = require('./constants');
+const { AREA_A_START, AREA_A_KEYWORDS } = require("./constants");
 
+/**
+ * First pass: Analyzes the Data Division to determine the optimal start column for PIC and VALUE clauses for each indentation level.
+ * @param {string[]} lines - The array of original lines from the file.
+ * @param {number} indentationSpaces - The number of spaces for indentation.
+ * @returns {Map<number, number>} A map where the key is the indentation level and the value is the column number.
+ */
 const analyzeForAlignment = (lines, indentationSpaces) => {
-    let maxEndColumn = 0;
+    const maxEndColumns = new Map();
     let inDataDivision = false;
     let inFileSystem = false;
     let inWorkingStorageSection = false;
     let inLinkageSection = false;
     const dataLevelStack = [];
 
-    for (const line of lines) {
+    for (const originalLine of lines) {
+        // Convert tabs to spaces for the entire line before any processing
+        const line = originalLine.replace(/\t/g, " ");
         const upperLine = line.toUpperCase().trim();
+
         if (upperLine.startsWith("DATA DIVISION")) inDataDivision = true;
+
+        // Reset stack on new sections to match the formatter's behavior
+        if (AREA_A_KEYWORDS.some((keyword) => upperLine.startsWith(keyword))) {
+            if (
+                upperLine.includes("SECTION") ||
+                upperLine.includes("DIVISION")
+            ) {
+                dataLevelStack.length = 0;
+            }
+        }
 
         if (upperLine.startsWith("FILE SECTION")) {
             inFileSystem = true;
@@ -43,6 +62,10 @@ const analyzeForAlignment = (lines, indentationSpaces) => {
             const levelMatch = upperLine.match(/^(\d{2})\s+/);
             if (levelMatch) {
                 const level = parseInt(levelMatch[1], 10);
+                const parentIndent =
+                    dataLevelStack.length > 0
+                        ? (dataLevelStack.length - 1) * indentationSpaces
+                        : 0;
                 let currentIndent = 0;
 
                 if (level === 1 || level === 77 || level === 78) {
@@ -60,28 +83,49 @@ const analyzeForAlignment = (lines, indentationSpaces) => {
 
                 const picIndex = upperLine.indexOf(" PIC ");
                 const valueIndex = upperLine.indexOf(" VALUE ");
+                let endColumn = 0;
+                let preClausePart = "";
 
                 if (
-                    (inFileSystem || inWorkingStorageSection || inLinkageSection) &&
+                    (inFileSystem ||
+                        inWorkingStorageSection ||
+                        inLinkageSection) &&
                     picIndex > -1
                 ) {
-                    const preClausePart = line.substring(0, picIndex).trim();
-                    const normalized = preClausePart.replace(/\s+/g, " ");
-                    const endColumn = AREA_A_START - 1 + currentIndent + normalized.length;
-                    maxEndColumn = Math.max(maxEndColumn, endColumn);
+                    preClausePart = line
+                        .substring(0, line.toUpperCase().indexOf(" PIC "))
+                        .trim();
+                } else if ((level === 78 || level === 88) && valueIndex > -1) {
+                    preClausePart = line
+                        .substring(0, line.toUpperCase().indexOf(" VALUE "))
+                        .trim();
                 }
 
-                if ((level === 78 || level === 88) && valueIndex > -1) {
-                    const preValuePartEnd = valueIndex;
-                    const preValuePart = line.substring(0, preValuePartEnd).trim();
-                    const normalized = preValuePart.replace(/\s+/g, " ");
-                    const endColumn = AREA_A_START - 1 + currentIndent + normalized.length;
-                    maxEndColumn = Math.max(maxEndColumn, endColumn);
+                if (preClausePart) {
+                    const normalized = preClausePart.replace(/\s+/g, " ");
+                    endColumn =
+                        AREA_A_START - 1 + currentIndent + normalized.length;
+
+                    // Level 88 items should align with their parent's indentation group
+                    const keyIndent =
+                        level === 88 ? parentIndent : currentIndent;
+
+                    const currentMax = maxEndColumns.get(keyIndent) || 0;
+                    maxEndColumns.set(
+                        keyIndent,
+                        Math.max(currentMax, endColumn)
+                    );
                 }
             }
         }
     }
-    return maxEndColumn > 0 ? maxEndColumn + 4 : 0;
+
+    // Add padding to all calculated maximums
+    for (const [key, value] of maxEndColumns.entries()) {
+        maxEndColumns.set(key, value + 4);
+    }
+
+    return maxEndColumns;
 };
 
 module.exports = { analyzeForAlignment };
