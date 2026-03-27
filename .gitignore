@@ -3,6 +3,9 @@ node_modules
 *.vsix
 .env
 dist
-test_material
-test/test_output/
-packages
+test_material/*
+!test_material/.gitkeep
+test/test_output/*
+!test/test_output/.gitkeep
+packages/*
+!packages/.gitkeep
