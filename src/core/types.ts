@@ -131,6 +131,10 @@ export interface IfStatement {
     thenBody: ProcedureStatement[];
     elseBody: ProcedureStatement[];
     leadingTrivia: Trivia[];
+    /** Comments/blank lines immediately before the ELSE line */
+    elseLeadingTrivia?: Trivia[];
+    /** Comments/blank lines immediately before the END-IF line */
+    endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-IF */
     periodTerminated?: boolean;
 }
@@ -140,6 +144,8 @@ export interface EvaluateStatement {
     subjectText: string;
     whenBranches: WhenBranch[];
     leadingTrivia: Trivia[];
+    /** Comments/blank lines immediately before the END-EVALUATE line */
+    endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-EVALUATE */
     periodTerminated?: boolean;
 }
@@ -156,22 +162,58 @@ export interface PerformBlock {
     clauseText: string;
     body: ProcedureStatement[];
     leadingTrivia: Trivia[];
+    /** Comments/blank lines immediately before the END-PERFORM line */
+    endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-PERFORM */
     periodTerminated?: boolean;
 }
 
-export interface ReadBlock {
-    kind: "ReadBlock";
+/** One conditional clause of a ConditionalBlock (AT END, ON SIZE ERROR, WHEN ..., etc.) */
+export interface ConditionalClause {
+    kind: "ConditionalClause";
+    /** The clause line as written, e.g. "AT END", "NOT ON SIZE ERROR",
+     *  "WHEN TAU-NIMI (IND) = HAKU", or "INVALID KEY GO TO VIRHE." */
+    text: string;
+    body: ProcedureStatement[];
+    leadingTrivia: Trivia[];
+}
+
+/**
+ * A statement whose verb can carry conditional clauses and an END-xxx scope
+ * terminator: READ/WRITE/REWRITE/DELETE/START, SEARCH, arithmetic verbs with
+ * ON SIZE ERROR, CALL/ACCEPT with ON EXCEPTION, STRING/UNSTRING with
+ * ON OVERFLOW. Configured via CONDITIONAL_VERBS in constants.ts.
+ */
+export interface ConditionalBlock {
+    kind: "ConditionalBlock";
+    /** The statement verb, e.g. "READ", "CALL", "COMPUTE" */
+    verb: string;
+    /** Header text up to (not including) the first inline clause */
     headerText: string;
-    /** The END-xxx terminator to emit (e.g. "END-READ", "END-REWRITE") */
+    /** Subsequent lines that belong to the statement header (e.g. extra CALL USING arguments) */
+    continuationLines?: string[];
+    /** The END-xxx terminator to emit (e.g. "END-READ", "END-CALL") */
     endTerminator: string;
+    /** Conditional clauses in source order */
+    clauses: ConditionalClause[];
+    /** Comments/blank lines that appeared immediately before the END-xxx line */
+    endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-xxx */
     periodTerminated?: boolean;
-    atEndBody: ProcedureStatement[];
-    notAtEndBody: ProcedureStatement[];
-    invalidKeyBody: ProcedureStatement[];
-    notInvalidKeyBody: ProcedureStatement[];
     leadingTrivia: Trivia[];
+}
+
+/** DECLARATIVES ... END DECLARATIVES region at the start of the Procedure Division */
+export interface Declaratives {
+    kind: "Declaratives";
+    /** The DECLARATIVES header line as written (e.g. "DECLARATIVES.") */
+    headerText: string;
+    /** The END DECLARATIVES line as written, or "" if missing in the source */
+    endText: string;
+    sections: ProcedureSection[];
+    leadingTrivia: Trivia[];
+    /** Comments/blank lines immediately before the END DECLARATIVES line */
+    endLeadingTrivia: Trivia[];
 }
 
 /** Fallback for lines the parser cannot understand */
@@ -189,7 +231,7 @@ export type ProcedureStatement =
     | IfStatement
     | EvaluateStatement
     | PerformBlock
-    | ReadBlock
+    | ConditionalBlock
     | UnparsedLine;
 
 export type SectionChild =
@@ -209,6 +251,7 @@ export type DivisionChild =
     | DivisionEntry
     | Paragraph
     | ProcedureSection
+    | Declaratives
     | UnparsedLine;
 
 export type TopLevelNode =

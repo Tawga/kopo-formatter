@@ -3,14 +3,13 @@
  * These divisions have relatively simple structure.
  */
 
-import { type ParserState, consumeTrivia, isAtDivisionHeader, peekUpperText, peekPastTrivia } from "../parser.js";
+import { type ParserState, consumeTrivia, isAtDivisionHeader, isDivisionHeaderText, peekUpperText, peekPastTrivia } from "../parser.js";
 import {
     type DivisionChild,
     type Section,
     type DivisionEntry,
     type SelectEntry,
     type CopyStatement,
-    type UnparsedLine,
 } from "../types.js";
 
 /**
@@ -23,7 +22,7 @@ export function parseIdentificationChildren(state: ParserState): DivisionChild[]
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead — if EOF or next division, leave trivia for the next division
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         const trivia = consumeTrivia(state);
         const line = state.lines[state.pos];
@@ -49,7 +48,7 @@ export function parseEnvironmentChildren(state: ParserState): DivisionChild[] {
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead — if EOF or next division, leave trivia for the next division
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         const trivia = consumeTrivia(state);
 
@@ -116,7 +115,7 @@ function parseEnvironmentSection(state: ParserState, leadingTrivia: import("../t
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         // Stop at next section — don't consume trivia
         if (isSectionStart(peek.nextUpper) || peek.nextUpper.startsWith("FILE-CONTROL") || peek.nextUpper.startsWith("SPECIAL-NAMES")) {

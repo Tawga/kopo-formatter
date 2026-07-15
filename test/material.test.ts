@@ -8,7 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MATERIAL_DIR = path.join(__dirname, "test_material");
 const OUTPUT_DIR = path.join(__dirname, "test_output");
 
-const FILES = ["BIP003L.CBL", "BIPA03.CBL", "ERL104PR.CBL", "TEEVAHKE.CBL"];
+// Every COBOL source dropped into test_material/ is picked up automatically
+const FILES = fs.readdirSync(MATERIAL_DIR).filter(f => /\.(cbl|cob|cpy)$/i.test(f));
 
 // Space=normal, *=comment, /=comment+eject, -=continuation, D=debug line
 const VALID_INDICATORS = new Set([" ", "*", "/", "-", "D"]);

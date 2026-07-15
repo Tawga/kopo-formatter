@@ -261,7 +261,6 @@ describe("division boundary detection after blank lines", () => {
         expect(resultLines.some(l => l.includes("LINKAGE SECTION"))).toBe(true);
 
         // Each section should have a blank line after its content
-        const wsIdx = resultLines.findIndex(l => l.includes("WORKING-STORAGE SECTION"));
         const linkIdx = resultLines.findIndex(l => l.includes("LINKAGE SECTION"));
         // There must be a blank line between WS content and LINKAGE header
         expect(resultLines[linkIdx - 1]).toBe("");

@@ -35,9 +35,12 @@ Tracking document for issues identified in [code-review-report.md](./code-review
 
 ## Priority 3 — Nice to Have
 
-- [ ] **Unify continuation line representation** across divisions
-  - Data Division joins with space; Procedure Division uses `continuationLines` array
-  - Pick one representation and apply consistently
+- [x] **Unify continuation line representation** across divisions (v0.5)
+  - Procedure Division now has a single shared collector (`collectContinuationLines`) used by
+    both `SimpleStatement` and `ConditionalBlock`, with one representation (`continuationLines` array)
+  - Data Division intentionally keeps joining into `rawText`: data entries are semantically
+    single logical lines (level + name + clauses) that the printer re-aligns and re-wraps,
+    so a line-per-line representation would carry no information
 
 - [x] **Improve format auto-detection** (`formatDetector.ts`)
   - Increased scan range from 20 to 50 non-blank lines

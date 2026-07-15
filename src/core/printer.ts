@@ -8,15 +8,12 @@ import {
     type SourceFile,
     type Division,
     type DivisionChild,
-    type Section,
     type DataEntry,
-    type UnparsedLine,
     type Trivia,
 } from "./types.js";
 import { buildLine } from "./layout.js";
 import { applyCase } from "./caseNormalizer.js";
 import {
-    type AlignmentMap,
     computeAlignment,
     printDataEntry,
     printDataSection,
@@ -27,7 +24,6 @@ import {
 import {
     printProcedureSection,
     printParagraph,
-    printStatement,
 } from "./printer/procedurePrinter.js";
 
 // ─── Line wrapping ────────────────────────────────────────────────────────────
@@ -104,7 +100,6 @@ function wrapFixedLine(line: string, useDash: boolean = true): string[] {
         ? 3
         : continuationSpaces;
     const contPfx = "      " + contIndicator + " ".repeat(effectiveSpaces);
-    const contMax = FIXED_MAX_COL - contPfx.length;
 
     const splitAt = findSplitPoint(content, FIXED_CONTENT_MAX);
     if (splitAt <= 0) return [line]; // Can't split safely
@@ -290,6 +285,24 @@ function printProcedureDivisionChildren(
                 break;
             case "Paragraph":
                 lines.push(...printParagraph(child, options, format));
+                break;
+            case "Declaratives":
+                lines.push(...printTrivia(child.leadingTrivia, format));
+                lines.push(buildLine(format, { areaA: true, content: applyCase(child.headerText, options) }));
+                for (const section of child.sections) {
+                    if (section.headerText === "") {
+                        // Anonymous recovery section — print only its content
+                        for (const para of section.paragraphs) {
+                            lines.push(...printParagraph(para, options, format));
+                        }
+                    } else {
+                        lines.push(...printProcedureSection(section, options, format));
+                    }
+                }
+                lines.push(...printTrivia(child.endLeadingTrivia, format));
+                if (child.endText) {
+                    lines.push(buildLine(format, { areaA: true, content: applyCase(child.endText, options) }));
+                }
                 break;
             case "UnparsedLine": {
                 lines.push(...printTrivia(child.leadingTrivia, format));

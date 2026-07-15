@@ -11,10 +11,9 @@ import {
     type IfStatement,
     type EvaluateStatement,
     type PerformBlock,
-    type ReadBlock,
+    type ConditionalBlock,
     type SimpleStatement,
     type UnparsedLine,
-    type Trivia,
 } from "../types.js";
 import { buildLine } from "../layout.js";
 import { printTrivia } from "./dataPrinter.js";
@@ -94,8 +93,8 @@ export function printStatement(
             return printEvaluateStatement(stmt, depth, options, format);
         case "PerformBlock":
             return printPerformBlock(stmt, depth, options, format);
-        case "ReadBlock":
-            return printReadBlock(stmt, depth, options, format);
+        case "ConditionalBlock":
+            return printConditionalBlock(stmt, depth, options, format);
         case "UnparsedLine":
             return printUnparsedStatement(stmt, depth, options, format);
         default:
@@ -208,11 +207,14 @@ function printIfStatement(
     // (An IF whose ELSE body ended with a period is still period-terminated overall,
     //  so we do NOT guard this on !periodTerminated — the ELSE must still be emitted.)
     if (stmt.elseBody.length > 0) {
+        if (stmt.elseLeadingTrivia) lines.push(...printTrivia(stmt.elseLeadingTrivia, format));
         lines.push(buildLine(format, { areaA: false, indent, content: c("ELSE", options) }));
         for (const child of stmt.elseBody) {
             lines.push(...printStatement(child, depth + 1, options, format));
         }
     }
+
+    if (stmt.endTerminatorTrivia) lines.push(...printTrivia(stmt.endTerminatorTrivia, format));
 
     // END-IF only when block-structured (not period-terminated by either branch)
     if (!stmt.periodTerminated) {
@@ -248,6 +250,8 @@ function printEvaluateStatement(
         }
     }
 
+    if (stmt.endTerminatorTrivia) lines.push(...printTrivia(stmt.endTerminatorTrivia, format));
+
     // END-EVALUATE only when block-structured (not closed by a period)
     if (!stmt.periodTerminated) {
         lines.push(buildLine(format, { areaA: false, indent, content: c("END-EVALUATE", options) }));
@@ -273,6 +277,8 @@ function printPerformBlock(
         lines.push(...printStatement(child, depth + 1, options, format));
     }
 
+    if (stmt.endTerminatorTrivia) lines.push(...printTrivia(stmt.endTerminatorTrivia, format));
+
     // END-PERFORM only when block-structured (not closed by a period)
     if (!stmt.periodTerminated) {
         lines.push(buildLine(format, { areaA: false, indent, content: c("END-PERFORM", options) }));
@@ -281,8 +287,18 @@ function printPerformBlock(
     return lines;
 }
 
-function printReadBlock(
-    stmt: ReadBlock,
+/**
+ * Print a conditional block:
+ *
+ *     READ TUO-FILE              ← header at depth
+ *        INVALID KEY             ← clauses at depth + 1
+ *           MOVE 1 TO VIRHE      ← clause bodies at depth + 2
+ *        NOT INVALID KEY
+ *           CONTINUE
+ *     END-READ                   ← terminator back at depth
+ */
+function printConditionalBlock(
+    stmt: ConditionalBlock,
     depth: number,
     options: FormatterOptions,
     format: SourceFormat,
@@ -293,32 +309,20 @@ function printReadBlock(
     lines.push(...printTrivia(stmt.leadingTrivia, format));
     lines.push(buildLine(format, { areaA: false, indent, content: c(stmt.headerText, options) }));
 
-    if (stmt.atEndBody.length > 0) {
-        lines.push(buildLine(format, { areaA: false, indent: (depth + 1) * options.indentationSpaces, content: c("AT END", options) }));
-        for (const child of stmt.atEndBody) {
+    for (const contLine of stmt.continuationLines ?? []) {
+        lines.push(buildLine(format, { areaA: false, indent: indent + options.indentationSpaces, content: c(contLine, options) }));
+    }
+
+    for (const clause of stmt.clauses) {
+        lines.push(...printTrivia(clause.leadingTrivia, format));
+        lines.push(buildLine(format, { areaA: false, indent: (depth + 1) * options.indentationSpaces, content: c(clause.text, options) }));
+        for (const child of clause.body) {
             lines.push(...printStatement(child, depth + 2, options, format));
         }
     }
 
-    if (stmt.notAtEndBody.length > 0) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c("NOT AT END", options) }));
-        for (const child of stmt.notAtEndBody) {
-            lines.push(...printStatement(child, depth + 1, options, format));
-        }
-    }
-
-    if (stmt.invalidKeyBody.length > 0) {
-        lines.push(buildLine(format, { areaA: false, indent: (depth + 1) * options.indentationSpaces, content: c("INVALID KEY", options) }));
-        for (const child of stmt.invalidKeyBody) {
-            lines.push(...printStatement(child, depth + 2, options, format));
-        }
-    }
-
-    if (stmt.notInvalidKeyBody.length > 0) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c("NOT INVALID KEY", options) }));
-        for (const child of stmt.notInvalidKeyBody) {
-            lines.push(...printStatement(child, depth + 1, options, format));
-        }
+    if (stmt.endTerminatorTrivia) {
+        lines.push(...printTrivia(stmt.endTerminatorTrivia, format));
     }
 
     // Emit END-xxx only when the block was not already closed by a period

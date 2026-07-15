@@ -2,7 +2,7 @@
  * Parser for Procedure Division: paragraphs, sections, and block statements.
  */
 
-import { type ParserState, consumeTrivia, isAtDivisionHeader, peekUpperText, peekPastTrivia } from "../parser.js";
+import { type ParserState, consumeTrivia, isAtDivisionHeader, isDivisionHeaderText, peekUpperText, peekPastTrivia } from "../parser.js";
 import {
     type DivisionChild,
     type Paragraph,
@@ -13,16 +13,18 @@ import {
     type EvaluateStatement,
     type WhenBranch,
     type PerformBlock,
-    type ReadBlock,
-    type UnparsedLine,
+    type ConditionalBlock,
+    type ConditionalClause,
+    type Declaratives,
     type Trivia,
 } from "../types.js";
 import {
-    AREA_A_KEYWORDS,
     AREA_B_STATEMENTS,
     INDENT_START_KEYWORDS,
     INDENT_END_KEYWORDS,
     PROCEDURE_VERBS,
+    CONDITIONAL_VERBS,
+    type ConditionalVerbConfig,
 } from "../constants.js";
 
 /**
@@ -32,20 +34,27 @@ export function parseProcedureDivisionChildren(state: ParserState): DivisionChil
     const children: DivisionChild[] = [];
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
-        const trivia = consumeTrivia(state);
-        if (state.pos >= state.lines.length || isAtDivisionHeader(state)) break;
+        // Peek first: trivia in front of the next division header must stay
+        // unconsumed so it becomes that division's leading trivia.
+        const peek = peekPastTrivia(state);
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
+        const trivia = consumeTrivia(state);
         const upper = peekUpperText(state);
 
-        // Check for SECTION header (e.g., "MAIN-SECTION SECTION.")
-        if (/^\S+\s+SECTION\.?$/.test(upper)) {
+        // DECLARATIVES must be checked before the paragraph-name rule:
+        // "DECLARATIVES." would otherwise match as a paragraph header.
+        if (upper.startsWith("DECLARATIVES")) {
+            children.push(parseDeclaratives(state, trivia));
+        } else if (/^\S+\s+SECTION\.?$/.test(upper)) {
+            // SECTION header (e.g., "MAIN-SECTION SECTION.")
             const section = parseProcSection(state, trivia);
             children.push(section);
-        } else if (isParagraphName(state, upper)) {
+        } else if (isParagraphName(upper)) {
             const para = parseParagraph(state, trivia);
             children.push(para);
-        } else if (upper.startsWith("DECLARATIVES") || upper.startsWith("END DECLARATIVES")) {
-            // DECLARATIVES and END DECLARATIVES are division-level structural markers
+        } else if (upper.startsWith("END DECLARATIVES")) {
+            // Stray END DECLARATIVES without a matching header — pass through
             const line = state.lines[state.pos];
             children.push({
                 kind: "UnparsedLine",
@@ -82,7 +91,7 @@ function parseProcSection(state: ParserState, leadingTrivia: Trivia[]): Procedur
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         // Stop at next SECTION or END DECLARATIVES — don't consume trivia
         if (/^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
@@ -93,7 +102,7 @@ function parseProcSection(state: ParserState, leadingTrivia: Trivia[]): Procedur
         const trivia = consumeTrivia(state);
         const upper = peekUpperText(state);
 
-        if (isParagraphName(state, upper)) {
+        if (isParagraphName(upper)) {
             const para = parseParagraph(state, trivia);
             section.paragraphs.push(para);
         } else {
@@ -113,6 +122,61 @@ function parseProcSection(state: ParserState, leadingTrivia: Trivia[]): Procedur
     return section;
 }
 
+/**
+ * Parse a DECLARATIVES ... END DECLARATIVES region into a structured node.
+ * The region contains USE sections, each parsed as a normal procedure section
+ * (parseProcSection already stops at END DECLARATIVES).
+ */
+function parseDeclaratives(state: ParserState, leadingTrivia: Trivia[]): Declaratives {
+    const headerLine = state.lines[state.pos];
+    state.pos++;
+
+    const decl: Declaratives = {
+        kind: "Declaratives",
+        headerText: headerLine.text.trim(),
+        endText: "",
+        sections: [],
+        leadingTrivia,
+        endLeadingTrivia: [],
+    };
+
+    while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
+        const peek = peekPastTrivia(state);
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
+
+        if (peek.nextUpper.startsWith("END DECLARATIVES")) {
+            decl.endLeadingTrivia = consumeTrivia(state);
+            decl.endText = state.lines[state.pos].text.trim();
+            state.pos++;
+            break;
+        }
+
+        const trivia = consumeTrivia(state);
+        const upper = peekUpperText(state);
+
+        if (/^\S+\s+SECTION\b/.test(upper)) {
+            decl.sections.push(parseProcSection(state, trivia));
+        } else {
+            // Malformed content (declaratives must contain sections) — wrap
+            // whatever we find in an anonymous section so nothing is lost.
+            const { stmts } = parseStatementSequence(state, trivia, ["END DECLARATIVES"]);
+            if (stmts.length > 0) {
+                decl.sections.push({
+                    kind: "ProcedureSection",
+                    name: "",
+                    headerText: "",
+                    leadingTrivia: [],
+                    paragraphs: [{ kind: "Paragraph", name: "", leadingTrivia: [], statements: stmts }],
+                });
+            } else {
+                break; // no progress — bail rather than loop forever
+            }
+        }
+    }
+
+    return decl;
+}
+
 function parseParagraph(state: ParserState, leadingTrivia: Trivia[]): Paragraph {
     const headerLine = state.lines[state.pos];
     const name = headerLine.text.trim().replace(/\.\s*$/, "");
@@ -129,10 +193,10 @@ function parseParagraph(state: ParserState, leadingTrivia: Trivia[]): Paragraph 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         // Stop at next paragraph, section, or END DECLARATIVES — don't consume trivia
-        if (isParagraphName(state, peek.nextUpper) || /^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
+        if (isParagraphName(peek.nextUpper) || /^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
             break;
         }
 
@@ -167,24 +231,27 @@ function parseStatementSequence(
     let currentTrivia = initialTrivia;
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
-        const line = state.lines[state.pos];
-        if (line.isBlank || line.isComment) {
-            currentTrivia = [...currentTrivia, ...consumeTrivia(state)];
-            continue;
-        }
-
-        const upper = peekUpperText(state);
+        // Decide from a non-consuming peek whether the sequence continues.
+        // Trivia before a terminator or boundary is left in the stream so the
+        // enclosing construct can attach it (e.g. a comment before END-IF).
+        const peek = peekPastTrivia(state);
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         // Check terminators
-        if (terminators.length > 0 && matchesTerminator(upper, terminators)) {
+        if (terminators.length > 0 && matchesTerminator(peek.nextUpper, terminators)) {
             break;
         }
 
         // Check for paragraph/section boundary or END DECLARATIVES
-        if (isParagraphName(state, upper) || /^\S+\s+SECTION\.?$/.test(upper) || upper.startsWith("END DECLARATIVES")) {
+        if (isParagraphName(peek.nextUpper) || /^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
             break;
         }
 
+        // The next real line belongs to this sequence — now consume its trivia.
+        currentTrivia = [...currentTrivia, ...consumeTrivia(state)];
+
+        const line = state.lines[state.pos];
+        const upper = peekUpperText(state);
         const rawText = line.text.trim();
         const verb = extractVerb(upper);
         state.pos++;
@@ -200,31 +267,16 @@ function parseStatementSequence(
             stmts.push(stmt);
             currentTrivia = [];
             if (stmt.periodTerminated) return { stmts, periodTerminated: true };
-        } else if (verb === "PERFORM" && isBlockPerform(upper, rawText)) {
+        } else if (verb === "PERFORM" && isBlockPerform(upper)) {
             const stmt = parsePerformBlock(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
             if (stmt.periodTerminated) return { stmts, periodTerminated: true };
-        } else if (verb === "READ") {
-            const stmt = parseReadBlock(state, rawText, currentTrivia, "END-READ");
-            stmts.push(stmt);
+        } else if (CONDITIONAL_VERBS[verb]) {
+            const result = parseConditionalStatement(state, rawText, currentTrivia, verb, CONDITIONAL_VERBS[verb], terminators);
+            stmts.push(result.stmt);
             currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
-        } else if (verb === "REWRITE") {
-            const stmt = parseReadBlock(state, rawText, currentTrivia, "END-REWRITE");
-            stmts.push(stmt);
-            currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
-        } else if (verb === "WRITE") {
-            const stmt = parseReadBlock(state, rawText, currentTrivia, "END-WRITE");
-            stmts.push(stmt);
-            currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
-        } else if (verb === "DELETE") {
-            const stmt = parseReadBlock(state, rawText, currentTrivia, "END-DELETE");
-            stmts.push(stmt);
-            currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
+            if (result.periodTerminated) return { stmts, periodTerminated: true };
         } else {
             // Simple statement
             const stmt: SimpleStatement = {
@@ -241,48 +293,76 @@ function parseStatementSequence(
                 return { stmts, periodTerminated: true };
             }
 
-            // Collect continuation lines: subsequent lines that don't start with a known
-            // COBOL verb. This handles multi-line statements like DISPLAY FLOATING WINDOW
-            // where LINES/SYSTEM MENU/TITLE/POP-UP follow as option lines, and also
-            // multi-line argument lists like CALL ... USING a, b, c where the final
-            // argument(s) appear on their own line(s).
-            let lastContinuedLine = rawText;
-            const continuationLines: string[] = [];
-            while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
-                const nextLine = state.lines[state.pos];
-                if (nextLine.isBlank || nextLine.isComment) break;
-                const nextUpper = nextLine.text.trim().toUpperCase();
-                // Only treat as a paragraph boundary when the previous line is "complete"
-                // (not ending with a comma, which signals an incomplete argument list).
-                if (isParagraphName(state, nextUpper) && !lastContinuedLine.trimEnd().endsWith(",")) break;
-                if (/^\S+\s+SECTION\.?$/.test(nextUpper)) break;
-                if (nextUpper.startsWith("END DECLARATIVES")) break;
-                if (terminators.length > 0 && matchesTerminator(nextUpper, terminators)) break;
-                if (isKnownVerb(nextUpper)) break;
-                // A line ending with AND/OR is a boolean connector: the following
-                // line continues the same logical expression. Keep collecting so
-                // that multi-line conditions spanning 3+ lines (e.g. condition
-                // AND condition AND condition) are fully gathered.
-                // (No break here — the next line is still part of this statement.)
-                const contText = nextLine.text.trim();
-                continuationLines.push(contText);
-                lastContinuedLine = contText;
-                state.pos++;
-                if (contText.trimEnd().endsWith(".")) break;
+            const cont = collectContinuationLines(state, rawText, terminators, []);
+            if (cont.lines.length > 0) {
+                stmt.continuationLines = cont.lines;
             }
-            if (continuationLines.length > 0) {
-                stmt.continuationLines = continuationLines;
-                stmts.push(stmt);
-                if (continuationLines[continuationLines.length - 1].trimEnd().endsWith(".")) {
-                    return { stmts, periodTerminated: true };
-                }
-            } else {
-                stmts.push(stmt);
+            stmts.push(stmt);
+            if (cont.endedWithPeriod) {
+                return { stmts, periodTerminated: true };
             }
         }
     }
 
     return { stmts, periodTerminated: false };
+}
+
+/** Result of collecting a statement's continuation lines. */
+interface ContinuationResult {
+    lines: string[];
+    /** True when the last collected line (or the header) ended the sentence with a period */
+    endedWithPeriod: boolean;
+}
+
+/**
+ * Collect continuation lines of a multi-line statement: subsequent lines that
+ * don't start with a known COBOL verb. This handles multi-line statements like
+ * DISPLAY FLOATING WINDOW where LINES/SYSTEM MENU/TITLE/POP-UP follow as
+ * option lines, and multi-line argument lists like CALL ... USING a, b, c
+ * where the final argument(s) appear on their own line(s).
+ *
+ * A line ending with AND/OR is a boolean connector: the following line
+ * continues the same logical expression, so collection keeps going and
+ * multi-line conditions spanning 3+ lines are fully gathered.
+ *
+ * `clauseStoppers` are conditional-clause keywords (and the END-xxx
+ * terminator) that end collection for conditional verbs — e.g. an
+ * "ON EXCEPTION" line after CALL arguments belongs to the block structure,
+ * not to the argument list.
+ */
+function collectContinuationLines(
+    state: ParserState,
+    headerText: string,
+    terminators: string[],
+    clauseStoppers: readonly string[],
+): ContinuationResult {
+    let lastContinuedLine = headerText;
+    const lines: string[] = [];
+
+    while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
+        const nextLine = state.lines[state.pos];
+        if (nextLine.isBlank || nextLine.isComment) break;
+        const nextUpper = nextLine.text.trim().toUpperCase();
+        // Only treat as a paragraph boundary when the previous line is "complete"
+        // (not ending with a comma, which signals an incomplete argument list).
+        if (isParagraphName(nextUpper) && !lastContinuedLine.trimEnd().endsWith(",")) break;
+        if (/^\S+\s+SECTION\.?$/.test(nextUpper)) break;
+        if (nextUpper.startsWith("END DECLARATIVES")) break;
+        if (terminators.length > 0 && matchesTerminator(nextUpper, terminators)) break;
+        if (clauseStoppers.length > 0 && matchClauseStart(nextUpper, clauseStoppers)) break;
+        if (isKnownVerb(nextUpper)) break;
+
+        const contText = nextLine.text.trim();
+        lines.push(contText);
+        lastContinuedLine = contText;
+        state.pos++;
+        if (contText.trimEnd().endsWith(".")) break;
+    }
+
+    return {
+        lines,
+        endedWithPeriod: lines.length > 0 && lines[lines.length - 1].trimEnd().endsWith("."),
+    };
 }
 
 function parseIfStatement(state: ParserState, headerText: string, leadingTrivia: Trivia[]): IfStatement {
@@ -307,9 +387,12 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
         };
     }
 
-    // Check if we hit ELSE
-    const upper = peekUpperText(state);
-    if (upper.startsWith("ELSE")) {
+    // Check if we hit ELSE (peeking past any comments before it)
+    let elseLeadingTrivia: Trivia[] | undefined;
+    const elsePeek = peekPastTrivia(state);
+    if (elsePeek.nextUpper.startsWith("ELSE")) {
+        const trivia = consumeTrivia(state);
+        if (trivia.length > 0) elseLeadingTrivia = trivia;
         state.pos++; // consume ELSE
         const elseTrivia = consumeTrivia(state);
         const elseResult = parseStatementSequence(state, elseTrivia, ["END-IF"]);
@@ -324,14 +407,18 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
                 thenBody,
                 elseBody,
                 leadingTrivia,
+                elseLeadingTrivia,
                 periodTerminated: true,
             };
         }
     }
 
-    // Consume END-IF if present
-    const endUpper = peekUpperText(state);
-    if (endUpper.startsWith("END-IF")) {
+    // Consume END-IF if present (peeking past any comments before it)
+    let endTerminatorTrivia: Trivia[] | undefined;
+    const endPeek = peekPastTrivia(state);
+    if (endPeek.nextUpper.startsWith("END-IF")) {
+        const trivia = consumeTrivia(state);
+        if (trivia.length > 0) endTerminatorTrivia = trivia;
         state.pos++;
     }
 
@@ -341,6 +428,8 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
         thenBody,
         elseBody,
         leadingTrivia,
+        elseLeadingTrivia,
+        endTerminatorTrivia,
         periodTerminated: false,
     };
 }
@@ -349,12 +438,14 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
     const subjectText = headerText;
     const whenBranches: WhenBranch[] = [];
     let periodTerminated = false;
+    let endTerminatorTrivia: Trivia[] | undefined;
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         const trivia = consumeTrivia(state);
         const upper = peekUpperText(state);
 
         if (upper.startsWith("END-EVALUATE")) {
+            if (trivia.length > 0) endTerminatorTrivia = trivia;
             state.pos++;
             break;
         }
@@ -384,7 +475,7 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
             break;
         } else {
             // Unexpected content — stop at structural boundaries; otherwise skip.
-            if (isParagraphName(state, upper) || /^\S+\s+SECTION\.?$/.test(upper)) {
+            if (isParagraphName(upper) || /^\S+\s+SECTION\.?$/.test(upper)) {
                 // Don't consume trivia — rewind so the outer parser picks it up.
                 // (trivia was already consumed above, so we must put it back here
                 //  as an exception; this path is rare error-recovery.)
@@ -400,6 +491,7 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
         subjectText,
         whenBranches,
         leadingTrivia,
+        endTerminatorTrivia,
         periodTerminated,
     };
 }
@@ -422,8 +514,11 @@ function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia
     const bodyResult = parseStatementSequence(state, bodyTrivia, ["END-PERFORM"]);
 
     let periodTerminated = false;
-    const endUpper = peekUpperText(state);
-    if (endUpper.startsWith("END-PERFORM")) {
+    let endTerminatorTrivia: Trivia[] | undefined;
+    const endPeek = peekPastTrivia(state);
+    if (endPeek.nextUpper.startsWith("END-PERFORM")) {
+        const trivia = consumeTrivia(state);
+        if (trivia.length > 0) endTerminatorTrivia = trivia;
         state.pos++;
     } else if (bodyResult.periodTerminated) {
         // Legacy style: a period inside the body closed the PERFORM and
@@ -436,128 +531,299 @@ function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia
         clauseText: headerText,
         body: bodyResult.stmts,
         leadingTrivia,
+        endTerminatorTrivia,
         periodTerminated,
     };
 }
 
-function parseReadBlock(state: ParserState, headerText: string, leadingTrivia: Trivia[], endTerminator: string): ReadBlock {
-    // Detect and strip any inline clause from the header line.
-    // e.g. "READ file INVALID KEY" → cleanHeader="READ file", inlineClause="INVALID KEY"
-    // Check NOT-forms first (more specific) to avoid mismatching "INVALID KEY" inside "NOT INVALID KEY".
-    let cleanHeader = headerText;
-    let inlineClause: string | null = null;
-    const upperHeader = headerText.toUpperCase();
+// ─── Conditional blocks (READ, CALL, COMPUTE, SEARCH, ...) ──────────────
 
-    for (const clause of ["NOT INVALID KEY", "NOT AT END", "INVALID KEY", "AT END"]) {
-        const spaceClause = " " + clause;
-        const idx = upperHeader.indexOf(spaceClause);
-        if (idx >= 0) {
-            // Only strip if nothing meaningful follows the clause keyword
-            const afterClause = upperHeader.substring(idx + spaceClause.length).trim();
-            if (!afterClause) {
-                cleanHeader = headerText.substring(0, idx).trim();
-                inlineClause = clause;
-                break;
-            }
+/** Cache of compiled clause-keyword regexes. */
+const clauseStartRegexCache = new Map<string, RegExp>();
+const clauseInlineRegexCache = new Map<string, RegExp>();
+
+/**
+ * Regex matching a clause keyword at the start of a line, at a word boundary.
+ * A following hyphen does not match, so "AT END" never matches "AT END-OF-PAGE"
+ * and "WHEN" never matches the paragraph name "WHEN-X".
+ */
+function clauseStartRegex(keyword: string): RegExp {
+    let re = clauseStartRegexCache.get(keyword);
+    if (!re) {
+        re = new RegExp("^" + keyword.split(" ").join("\\s+") + "(?![\\w-])");
+        clauseStartRegexCache.set(keyword, re);
+    }
+    return re;
+}
+
+/** Regex finding a clause keyword mid-line (preceded by whitespace), word-bounded. */
+function clauseInlineRegex(keyword: string): RegExp {
+    let re = clauseInlineRegexCache.get(keyword);
+    if (!re) {
+        re = new RegExp("(?:^|\\s)(" + keyword.split(" ").join("\\s+") + ")(?![\\w-])", "g");
+        clauseInlineRegexCache.set(keyword, re);
+    }
+    return re;
+}
+
+/** Return the clause keyword that starts the line, or null. */
+function matchClauseStart(upper: string, clauses: readonly string[]): string | null {
+    for (const kw of clauses) {
+        if (clauseStartRegex(kw).test(upper)) return kw;
+    }
+    return null;
+}
+
+/** Mark which character positions of `text` lie inside a string literal. */
+function literalMask(text: string): boolean[] {
+    const mask: boolean[] = [];
+    let quote: string | null = null;
+    for (const ch of text) {
+        if (quote) {
+            mask.push(true);
+            if (ch === quote) quote = null;
+        } else if (ch === '"' || ch === "'") {
+            mask.push(true);
+            quote = ch;
+        } else {
+            mask.push(false);
         }
     }
+    return mask;
+}
 
-    const readBlock: ReadBlock = {
-        kind: "ReadBlock",
-        headerText: cleanHeader,
-        endTerminator,
-        atEndBody: [],
-        notAtEndBody: [],
-        invalidKeyBody: [],
-        notInvalidKeyBody: [],
+/**
+ * Find the earliest clause keyword in `text` that lies outside string literals.
+ * `fromIndex` skips a prefix (used when splitting successive inline clauses).
+ */
+function findInlineClause(
+    text: string,
+    clauses: readonly string[],
+    fromIndex: number = 0,
+): { index: number; keyword: string } | null {
+    const upper = text.toUpperCase();
+    const mask = literalMask(text);
+    let best: { index: number; keyword: string } | null = null;
+
+    for (const kw of clauses) {
+        const re = clauseInlineRegex(kw);
+        re.lastIndex = fromIndex;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(upper)) !== null) {
+            const idx = m.index + m[0].length - m[1].length; // start of the keyword itself
+            if (mask[idx]) continue; // inside a literal — keep scanning
+            // NOT-forms and longer keywords are listed first, so on an index
+            // tie the earlier-listed keyword wins (strict <).
+            if (best === null || idx < best.index) best = { index: idx, keyword: kw };
+            break;
+        }
+    }
+    return best;
+}
+
+interface ConditionalResult {
+    stmt: ProcedureStatement;
+    periodTerminated: boolean;
+}
+
+/**
+ * Parse a statement whose verb accepts conditional clauses (per
+ * CONDITIONAL_VERBS). Returns a ConditionalBlock when clauses are actually
+ * present — inline in the header or on following lines — and a plain
+ * SimpleStatement otherwise, so "ADD 1 TO X." stays flat.
+ */
+function parseConditionalStatement(
+    state: ParserState,
+    headerText: string,
+    leadingTrivia: Trivia[],
+    verb: string,
+    cfg: ConditionalVerbConfig,
+    terminators: string[],
+): ConditionalResult {
+    // Inline clause on the header line → definitely a block.
+    const inline = findInlineClause(headerText, cfg.clauses);
+    if (inline) {
+        return parseInlineConditionalBlock(state, headerText, inline, leadingTrivia, verb, cfg, terminators);
+    }
+
+    // Header is a complete sentence → plain statement.
+    if (headerText.trimEnd().endsWith(".")) {
+        return {
+            stmt: { kind: "SimpleStatement", verb, rawText: headerText, leadingTrivia },
+            periodTerminated: true,
+        };
+    }
+
+    // Collect header continuations (e.g. CALL USING arguments on their own
+    // lines), stopping at clause keywords and the END-xxx terminator.
+    const stoppers = [...cfg.clauses, cfg.endTerminator];
+    const cont = collectContinuationLines(state, headerText, terminators, stoppers);
+
+    // Block mode only when a clause or the END-xxx actually follows.
+    const peek = peekPastTrivia(state);
+    const blockFollows = !cont.endedWithPeriod && peek.nextUpper !== "" &&
+        (matchClauseStart(peek.nextUpper, cfg.clauses) !== null ||
+            clauseStartRegex(cfg.endTerminator).test(peek.nextUpper));
+
+    if (blockFollows) {
+        const block: ConditionalBlock = {
+            kind: "ConditionalBlock",
+            verb,
+            headerText,
+            continuationLines: cont.lines.length > 0 ? cont.lines : undefined,
+            endTerminator: cfg.endTerminator,
+            clauses: [],
+            leadingTrivia,
+        };
+        parseClauseLines(state, block, cfg, terminators);
+        return { stmt: block, periodTerminated: block.periodTerminated === true };
+    }
+
+    const stmt: SimpleStatement = { kind: "SimpleStatement", verb, rawText: headerText, leadingTrivia };
+    if (cont.lines.length > 0) stmt.continuationLines = cont.lines;
+    return { stmt, periodTerminated: cont.endedWithPeriod };
+}
+
+/**
+ * Parse a conditional block whose header line already contains one or more
+ * inline clauses, e.g. "READ TUO-FILE INVALID KEY" or
+ * "COMPUTE X = A / B ON SIZE ERROR MOVE 0 TO X.".
+ *
+ * The header keeps everything before the first clause; each inline clause
+ * segment (keyword plus any imperative text up to the next clause) becomes a
+ * ConditionalClause whose following lines are parsed as its body.
+ */
+function parseInlineConditionalBlock(
+    state: ParserState,
+    headerText: string,
+    firstClause: { index: number; keyword: string },
+    leadingTrivia: Trivia[],
+    verb: string,
+    cfg: ConditionalVerbConfig,
+    terminators: string[],
+): ConditionalResult {
+    const block: ConditionalBlock = {
+        kind: "ConditionalBlock",
+        verb,
+        headerText: headerText.substring(0, firstClause.index).trim(),
+        endTerminator: cfg.endTerminator,
+        clauses: [],
         leadingTrivia,
     };
 
-    // If the (cleaned) header ends with a period the statement is fully self-contained
-    // on one line (e.g. "WRITE RIVI BEFORE PAGE." or "READ file INVALID KEY action.").
-    // Nothing follows on subsequent lines — return immediately as period-terminated.
-    if (cleanHeader.trimEnd().endsWith(".")) {
-        readBlock.periodTerminated = true;
-        return readBlock;
+    // Split the rest of the line into successive clause segments.
+    let pos = firstClause.index;
+    while (pos < headerText.length) {
+        const next = findInlineClause(headerText, cfg.clauses, pos + 1);
+        const end = next ? next.index : headerText.length;
+        block.clauses.push({
+            kind: "ConditionalClause",
+            text: headerText.substring(pos, end).trim(),
+            body: [],
+            leadingTrivia: [],
+        });
+        pos = end;
     }
 
-    // If an inline clause was found in the header, parse the immediately following
-    // statements into the corresponding clause body before entering the main loop.
-    if (inlineClause) {
-        const stoppers = [endTerminator, "AT END", "NOT AT END", "INVALID KEY", "NOT INVALID KEY"];
-        const bodyTrivia = consumeTrivia(state);
-        const r = parseStatementSequence(state, bodyTrivia, stoppers);
-        switch (inlineClause) {
-            case "INVALID KEY":     readBlock.invalidKeyBody = r.stmts; break;
-            case "NOT INVALID KEY": readBlock.notInvalidKeyBody = r.stmts; break;
-            case "AT END":          readBlock.atEndBody = r.stmts; break;
-            case "NOT AT END":      readBlock.notAtEndBody = r.stmts; break;
-        }
-        if (r.periodTerminated) {
-            readBlock.periodTerminated = true;
-            return readBlock;
-        }
+    const lastClause = block.clauses[block.clauses.length - 1];
+    if (lastClause.text.trimEnd().endsWith(".")) {
+        // The sentence ended on the header line — the block is complete.
+        block.periodTerminated = true;
+        return { stmt: block, periodTerminated: true };
     }
 
+    // Following lines belong to the last inline clause's body, then the
+    // regular clause-line loop takes over for further clauses / END-xxx.
+    const bodyTrivia = consumeTrivia(state);
+    const r = parseStatementSequence(state, bodyTrivia, [block.endTerminator, ...cfg.clauses]);
+    lastClause.body = r.stmts;
+    if (r.periodTerminated) {
+        block.periodTerminated = true;
+        return { stmt: block, periodTerminated: true };
+    }
+
+    parseClauseLines(state, block, cfg, terminators);
+    return { stmt: block, periodTerminated: block.periodTerminated === true };
+}
+
+/**
+ * Parse clause lines (AT END, ON SIZE ERROR, WHEN ..., etc.) and their bodies
+ * until the END-xxx terminator, a closing period, or a structural boundary.
+ */
+function parseClauseLines(
+    state: ParserState,
+    block: ConditionalBlock,
+    cfg: ConditionalVerbConfig,
+    terminators: string[],
+): void {
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
-        // Peek ahead to decide whether to stop before consuming trivia
+        // Decide everything from a non-consuming peek so trivia stays with
+        // whatever construct actually owns it.
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
-        if (peek.nextUpper.startsWith(endTerminator)) {
-            // Consume trivia + the END-xxx line
-            consumeTrivia(state);
+        if (clauseStartRegex(block.endTerminator).test(peek.nextUpper)) {
+            const endTrivia = consumeTrivia(state);
+            if (endTrivia.length > 0) block.endTerminatorTrivia = endTrivia;
             state.pos++;
             break;
         }
 
-        // Stop at structural boundaries — don't consume trivia
-        if (isParagraphName(state, peek.nextUpper) || /^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
+        // Structural boundaries and enclosing-block terminators end the block
+        // without consuming anything.
+        if (isParagraphName(peek.nextUpper) || /^\S+\s+SECTION\.?$/.test(peek.nextUpper) || peek.nextUpper.startsWith("END DECLARATIVES")) {
+            break;
+        }
+        if (terminators.length > 0 && matchesTerminator(peek.nextUpper, terminators)) {
             break;
         }
 
-        const trivia = consumeTrivia(state);
-        const upper = peekUpperText(state);
+        const posBefore = state.pos;
+        const kw = matchClauseStart(peek.nextUpper, cfg.clauses);
 
-        if (upper.startsWith("NOT AT END")) {
+        if (kw) {
+            const trivia = consumeTrivia(state);
+            const clauseLine = state.lines[state.pos];
             state.pos++;
-            const bodyTrivia = consumeTrivia(state);
-            const r = parseStatementSequence(state, bodyTrivia, [endTerminator, "NOT AT END", "AT END", "INVALID KEY", "NOT INVALID KEY"]);
-            readBlock.notAtEndBody = r.stmts;
-            if (r.periodTerminated) { readBlock.periodTerminated = true; break; }
-        } else if (upper.startsWith("AT END")) {
-            state.pos++;
-            const bodyTrivia = consumeTrivia(state);
-            const r = parseStatementSequence(state, bodyTrivia, [endTerminator, "NOT AT END", "INVALID KEY", "NOT INVALID KEY"]);
-            readBlock.atEndBody = r.stmts;
-            if (r.periodTerminated) { readBlock.periodTerminated = true; break; }
-        } else if (upper.startsWith("NOT INVALID KEY")) {
-            state.pos++;
-            const bodyTrivia = consumeTrivia(state);
-            const r = parseStatementSequence(state, bodyTrivia, [endTerminator]);
-            readBlock.notInvalidKeyBody = r.stmts;
-            if (r.periodTerminated) { readBlock.periodTerminated = true; break; }
-        } else if (upper.startsWith("INVALID KEY")) {
-            state.pos++;
-            const bodyTrivia = consumeTrivia(state);
-            const r = parseStatementSequence(state, bodyTrivia, [endTerminator, "NOT INVALID KEY"]);
-            readBlock.invalidKeyBody = r.stmts;
-            if (r.periodTerminated) { readBlock.periodTerminated = true; break; }
-        } else if (!upper) {
-            break;
-        } else {
-            // Unknown content (e.g. inline body after "READ file INVALID KEY" on the same
-            // line, or after "REWRITE file INVALID KEY"). Parse rather than silently drop.
-            const { stmts, periodTerminated } = parseStatementSequence(state, trivia, [endTerminator]);
-            readBlock.invalidKeyBody.push(...stmts);
-            if (periodTerminated) {
-                readBlock.periodTerminated = true;
+            const clause: ConditionalClause = {
+                kind: "ConditionalClause",
+                text: clauseLine.text.trim(),
+                body: [],
+                leadingTrivia: trivia,
+            };
+            block.clauses.push(clause);
+
+            if (clause.text.trimEnd().endsWith(".")) {
+                block.periodTerminated = true;
                 break;
             }
+
+            const bodyTrivia = consumeTrivia(state);
+            const r = parseStatementSequence(state, bodyTrivia, [block.endTerminator, ...cfg.clauses]);
+            clause.body = r.stmts;
+            if (r.periodTerminated) {
+                block.periodTerminated = true;
+                break;
+            }
+        } else if (block.clauses.length > 0) {
+            // Content that belongs to the previous clause's body (e.g. after a
+            // comment interrupted the body). Parse rather than silently drop.
+            const trivia = consumeTrivia(state);
+            const r = parseStatementSequence(state, trivia, [block.endTerminator, ...cfg.clauses]);
+            block.clauses[block.clauses.length - 1].body.push(...r.stmts);
+            if (r.periodTerminated) {
+                block.periodTerminated = true;
+                break;
+            }
+        } else {
+            break;
+        }
+
+        // Safety: never loop without progress.
+        if (state.pos === posBefore) {
+            state.pos++;
         }
     }
-
-    return readBlock;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -578,7 +844,7 @@ function isKnownVerb(upper: string): boolean {
     return false;
 }
 
-function isParagraphName(state: ParserState, upper: string): boolean {
+function isParagraphName(upper: string): boolean {
     // A paragraph name is a word followed by a period, that's not a known statement
     const match = upper.match(/^([A-Z0-9-]+)\.\s*$/);
     if (!match) return false;
@@ -593,7 +859,10 @@ function isParagraphName(state: ParserState, upper: string): boolean {
 }
 
 function matchesTerminator(upper: string, terminators: string[]): boolean {
-    return terminators.some(t => upper.startsWith(t));
+    // Word-boundary match: "WHEN" must not match "WHEN-X." (a paragraph name),
+    // and "END-IF" must not match "END-IFX". A following hyphen is treated as
+    // part of the word because COBOL identifiers are hyphenated.
+    return terminators.some(t => clauseStartRegex(t).test(upper));
 }
 
 function extractVerb(upper: string): string {
@@ -601,7 +870,7 @@ function extractVerb(upper: string): string {
     return match ? match[1] : "";
 }
 
-function isBlockPerform(upper: string, rawText: string): boolean {
+function isBlockPerform(upper: string): boolean {
     const lineWithoutPeriod = upper.replace(/\.\s*$/, "");
     return upper.includes(" UNTIL ") ||
         upper.includes(" VARYING ") ||

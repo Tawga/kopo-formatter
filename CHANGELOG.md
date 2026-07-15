@@ -4,10 +4,30 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-07-15
+
+### Added
+
+- **Generic conditional-clause blocks** — the READ-block logic is generalized to all verbs with conditional clauses, driven by a single configuration table (`CONDITIONAL_VERBS`):
+  - `SEARCH` / `SEARCH ALL` with `AT END` and multiple `WHEN` branches
+  - `START` with `INVALID KEY` / `NOT INVALID KEY`
+  - `ADD`/`SUBTRACT`/`MULTIPLY`/`DIVIDE`/`COMPUTE` with `[NOT] [ON] SIZE ERROR`
+  - `CALL` with `[NOT] ON EXCEPTION` / `ON OVERFLOW`
+  - `STRING`/`UNSTRING` with `[NOT] ON OVERFLOW`
+  - `ACCEPT` with `[NOT] ON EXCEPTION` / `[NOT] ON ESCAPE` (ACUCOBOL)
+  - `WRITE` additionally with `[NOT] AT END-OF-PAGE` / `AT EOP`
+- Uniform clause layout: clause keywords at one indent level below the verb, clause bodies one further; `NOT`-forms now align with their positive counterparts
+- Clause keywords are matched at word boundaries and outside string literals — `SIZE-ERROR-FLAG` or `CALL "ON EXCEPTION"` never trigger a block
+- Statements without clauses stay flat (`ADD 1 TO X.` is unchanged), and period-terminated blocks never get an invented `END-xxx`
+- **Structured DECLARATIVES** — `DECLARATIVES ... END DECLARATIVES` is parsed as a proper node containing its USE sections instead of falling back to unparsed lines
+- `scripts/coverage.mjs` — reports the unparsed-line ratio on the test corpus (roadmap KPI); v0.5 takes the corpus from 0.24 % to 0.00 %
 
 ### Fixed
 
+- **Division headers preceded by comment lines are now recognized** — previously a comment block right before e.g. `ENVIRONMENT DIVISION.` caused the header (and everything after it) to be swallowed into the previous division as flat, unformatted entries
+- Comments immediately before `ELSE`, `END-IF`, `END-EVALUATE`, `END-PERFORM`, and `END-READ`-style terminators are no longer silently deleted
+- A clause-less `READ`/`WRITE` no longer swallows the following statements into a phantom clause body
+- `WHEN` inside EVALUATE/SEARCH no longer matches paragraph names like `WHEN-X.` (word-boundary matching)
 - Out-of-line `PERFORM ... UNTIL x.` no longer swallows following statements into a phantom body and no longer gets a spurious `END-PERFORM` (which produced non-compiling output)
 - Period-terminated `EVALUATE` (legacy style without `END-EVALUATE`) no longer gets a spurious `END-EVALUATE` inserted after the period
 - Fixed-form continued string literals (`-` in col 7 resuming with a quote) are now spliced per punched-card semantics instead of being joined with a space, which corrupted the literal's value and quote pairing
@@ -17,5 +37,3 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - The formatting provider is registered for both `COBOL` and `cobol` language ids
 - Formatting now returns a minimal edit for the changed region instead of replacing the whole document (keeps cursor position stable)
 - Removed the invalid `contributes.formatters` block from package.json; README install instructions now point to `packages/` instead of `build/`
-
-- Initial release

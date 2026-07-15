@@ -6,7 +6,7 @@
         "url": "https://github.com/Tawga/kopo-formatter"
     },
     "description": "Visual Studio Code extension to format Cobol files",
-    "version": "0.4.1",
+    "version": "0.5.0",
     "engines": {
         "vscode": "^1.102.0"
     },
@@ -118,12 +118,14 @@
         "build": "npm run compile && npm run bundle",
         "package": "npm run build && node -e \"require('child_process').execSync('vsce package --out packages/kopo-formatter-v'+require('./package.json').version+'.vsix',{stdio:'inherit'})\"",
         "test": "vitest run",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
+        "lint": "tsc -p . --noEmit --noUnusedLocals --noUnusedParameters && oxlint src test scripts"
     },
     "devDependencies": {
         "@types/node": "20.x",
         "@types/vscode": "^1.102.0",
         "esbuild": "^0.25.0",
+        "oxlint": "^1.74.0",
         "typescript": "^5.7.0",
         "vitest": "^3.0.0"
     }

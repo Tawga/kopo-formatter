@@ -194,6 +194,58 @@ describe("line wrapping safety", () => {
     });
 });
 
+// ─── Division headers preceded by comments ────────────────────────────────────
+
+describe("division headers behind comments", () => {
+    const source = [
+        "      " + " IDENTIFICATION DIVISION.",
+        "      " + " PROGRAM-ID. TESTI.",
+        "      " + "* kommentti ennen environment-divisionia",
+        "      " + " ENVIRONMENT DIVISION.",
+        "      " + " INPUT-OUTPUT SECTION.",
+        "      " + " FILE-CONTROL.",
+        "      " + '     COPY "SEL003".',
+        "      " + "* kommentti ennen data-divisionia",
+        "      " + " DATA DIVISION.",
+        "      " + " WORKING-STORAGE SECTION.",
+        "      " + " 01  WS-A PIC X.",
+        "      " + "* kommentti ennen procedure-divisionia",
+        "      " + " PROCEDURE DIVISION.",
+        "      " + " MAIN-PARA.",
+        "      " + "     STOP RUN.",
+    ].join("\n");
+
+    it("recognizes every division even when comments precede the header", async () => {
+        const { parseSource } = await import("../src/core/index.js");
+        const ast = parseSource(source, { sourceFormat: "fixed" });
+        const kinds = ast.children
+            .filter(c => c.kind === "Division")
+            .map(c => (c as { divisionType: string }).divisionType);
+        expect(kinds).toEqual([
+            "IdentificationDivision",
+            "EnvironmentDivision",
+            "DataDivision",
+            "ProcedureDivision",
+        ]);
+    });
+
+    it("keeps the comments and formats the divisions' content", () => {
+        const result = fmt(source);
+        expect(result).toContain("kommentti ennen environment-divisionia");
+        expect(result).toContain("kommentti ennen data-divisionia");
+        expect(result).toContain("kommentti ennen procedure-divisionia");
+        // COPY inside FILE-CONTROL lands in Area B (col 12), proving the
+        // environment division parser actually ran
+        const copyLine = lines(result).find(l => l.includes('COPY "SEL003"'))!;
+        expect(copyLine.search(/\S/)).toBe(11);
+    });
+
+    it("is idempotent", () => {
+        const once = fmt(source);
+        expect(fmt(once)).toBe(once);
+    });
+});
+
 // ─── Idempotency of the fixed cases ───────────────────────────────────────────
 
 describe("idempotency of bugfix cases", () => {

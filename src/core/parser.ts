@@ -75,25 +75,37 @@ function matchDivisionHeader(state: ParserState): { kind: DivisionKind; headerTe
     const line = state.lines[state.pos];
     if (line.isComment || line.isBlank) return null;
 
-    const upper = line.text.trim().toUpperCase();
+    const kind = matchDivisionKind(line.text.trim().toUpperCase());
+    return kind ? { kind, headerText: line.text.trim() } : null;
+}
 
+/** Match upper-cased line text against the division header keywords. */
+function matchDivisionKind(upper: string): DivisionKind | null {
     for (const keyword of DIVISION_KEYWORDS) {
         if (upper.startsWith(keyword)) {
-            let kind: DivisionKind;
             if (keyword.includes("IDENTIFICATION") || keyword.includes("ID")) {
-                kind = "IdentificationDivision";
+                return "IdentificationDivision";
             } else if (keyword.includes("ENVIRONMENT")) {
-                kind = "EnvironmentDivision";
+                return "EnvironmentDivision";
             } else if (keyword.startsWith("DATA")) {
-                kind = "DataDivision";
-            } else {
-                kind = "ProcedureDivision";
+                return "DataDivision";
             }
-            return { kind, headerText: line.text.trim() };
+            return "ProcedureDivision";
         }
     }
-
     return null;
+}
+
+/**
+ * True when the given upper-cased line text is a division header.
+ *
+ * Use this on `peekPastTrivia().nextUpper` when deciding whether to stop a
+ * child-parsing loop — `isAtDivisionHeader(state)` checks the CURRENT
+ * position, which may be a comment/blank line sitting in front of the
+ * header, and would wrongly report false.
+ */
+export function isDivisionHeaderText(upper: string): boolean {
+    return matchDivisionKind(upper) !== null;
 }
 
 function parseDivision(

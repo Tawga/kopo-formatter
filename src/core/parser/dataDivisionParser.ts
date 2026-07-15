@@ -2,10 +2,9 @@
  * Parser for Data Division: builds hierarchical DataEntry trees from level numbers.
  */
 
-import { type ParserState, consumeTrivia, isAtDivisionHeader, peekUpperText, peekPastTrivia } from "../parser.js";
+import { type ParserState, consumeTrivia, isAtDivisionHeader, isDivisionHeaderText, peekUpperText, peekPastTrivia } from "../parser.js";
 import {
     type DivisionChild,
-    type SectionChild,
     type Section,
     type DataEntry,
     type DataClause,
@@ -22,9 +21,12 @@ export function parseDataDivisionChildren(state: ParserState): DivisionChild[] {
     const children: DivisionChild[] = [];
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
-        const trivia = consumeTrivia(state);
-        if (state.pos >= state.lines.length || isAtDivisionHeader(state)) break;
+        // Peek first: trivia in front of the next division header must stay
+        // unconsumed so it becomes that division's leading trivia.
+        const peek = peekPastTrivia(state);
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
+        const trivia = consumeTrivia(state);
         const upper = peekUpperText(state);
 
         if (isDataSectionHeader(upper)) {
@@ -82,7 +84,7 @@ function parseDataSection(state: ParserState, leadingTrivia: import("../types.js
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         // Stop at next section header or Area A keyword — don't consume trivia
         if (isDataSectionHeader(peek.nextUpper) || isAreaAKeywordNotData(peek.nextUpper)) {
@@ -153,7 +155,7 @@ function parseFdEntry(state: ParserState, leadingTrivia: import("../types.js").T
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         if (isDataSectionHeader(peek.nextUpper) || peek.nextUpper.startsWith("FD ") || peek.nextUpper === "FD") {
             break;
@@ -195,7 +197,7 @@ function parseDataEntries(state: ParserState, initialTrivia: import("../types.js
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         // Peek ahead to decide whether to stop before consuming trivia
         const peek = peekPastTrivia(state);
-        if (!peek.nextUpper || isAtDivisionHeader(state)) break;
+        if (!peek.nextUpper || isDivisionHeaderText(peek.nextUpper)) break;
 
         if (isDataSectionHeader(peek.nextUpper) || peek.nextUpper.startsWith("FD ") || isAreaAKeywordNotData(peek.nextUpper)) {
             break;

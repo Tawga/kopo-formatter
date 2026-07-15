@@ -238,6 +238,44 @@ export const BLOCK_OPENERS = [
     "JSON PARSE",
 ] as const;
 
+/** Configuration for a verb that can carry conditional clauses. */
+export interface ConditionalVerbConfig {
+    /** The END-xxx scope terminator for this verb */
+    endTerminator: string;
+    /**
+     * Clause keywords this verb accepts. Order is match priority: NOT-forms
+     * and longer keywords first, so "NOT AT END" wins over "AT END".
+     * Keywords are matched at word boundaries (a following hyphen does not
+     * match, so "AT END" never matches inside "AT END-OF-PAGE").
+     */
+    clauses: readonly string[];
+}
+
+const SIZE_ERROR_CLAUSES = ["NOT ON SIZE ERROR", "ON SIZE ERROR", "NOT SIZE ERROR", "SIZE ERROR"] as const;
+
+/**
+ * Verbs whose statements may carry conditional clauses and an END-xxx
+ * terminator. Drives the generic ConditionalBlock parser — adding a verb
+ * here is all that is needed to make its clauses format as a block.
+ */
+export const CONDITIONAL_VERBS: Readonly<Record<string, ConditionalVerbConfig>> = {
+    READ:     { endTerminator: "END-READ",     clauses: ["NOT AT END", "AT END", "NOT INVALID KEY", "INVALID KEY"] },
+    WRITE:    { endTerminator: "END-WRITE",    clauses: ["NOT INVALID KEY", "INVALID KEY", "NOT AT END-OF-PAGE", "AT END-OF-PAGE", "NOT AT EOP", "AT EOP"] },
+    REWRITE:  { endTerminator: "END-REWRITE",  clauses: ["NOT INVALID KEY", "INVALID KEY"] },
+    DELETE:   { endTerminator: "END-DELETE",   clauses: ["NOT INVALID KEY", "INVALID KEY"] },
+    START:    { endTerminator: "END-START",    clauses: ["NOT INVALID KEY", "INVALID KEY"] },
+    ADD:      { endTerminator: "END-ADD",      clauses: SIZE_ERROR_CLAUSES },
+    SUBTRACT: { endTerminator: "END-SUBTRACT", clauses: SIZE_ERROR_CLAUSES },
+    MULTIPLY: { endTerminator: "END-MULTIPLY", clauses: SIZE_ERROR_CLAUSES },
+    DIVIDE:   { endTerminator: "END-DIVIDE",   clauses: SIZE_ERROR_CLAUSES },
+    COMPUTE:  { endTerminator: "END-COMPUTE",  clauses: SIZE_ERROR_CLAUSES },
+    CALL:     { endTerminator: "END-CALL",     clauses: ["NOT ON EXCEPTION", "ON EXCEPTION", "NOT ON OVERFLOW", "ON OVERFLOW"] },
+    STRING:   { endTerminator: "END-STRING",   clauses: ["NOT ON OVERFLOW", "ON OVERFLOW"] },
+    UNSTRING: { endTerminator: "END-UNSTRING", clauses: ["NOT ON OVERFLOW", "ON OVERFLOW"] },
+    ACCEPT:   { endTerminator: "END-ACCEPT",   clauses: ["NOT ON EXCEPTION", "ON EXCEPTION", "NOT ON ESCAPE", "ON ESCAPE"] },
+    SEARCH:   { endTerminator: "END-SEARCH",   clauses: ["AT END", "WHEN"] },
+};
+
 /** All scope terminators (END-xxx keywords). */
 export const SCOPE_TERMINATORS = [
     "END-ACCEPT",

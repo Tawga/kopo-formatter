@@ -11,10 +11,6 @@ function lines(result: string): string[] {
     return result.split("\n");
 }
 
-function lineAt(result: string, n: number): string {
-    return lines(result)[n];
-}
-
 // Fixed-form column helpers
 function col(line: string, c: number): string {
     return line.charAt(c - 1); // 1-based column
