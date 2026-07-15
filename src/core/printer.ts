@@ -150,6 +150,9 @@ function findSplitPoint(text: string, maxLen: number): number {
             break;
         }
     }
+    // Never split inside the leading indent: the continuation would carry the
+    // entire content and wrapFixedLine would recurse on an identical line.
+    minSplit = Math.max(minSplit, leadingSpaces + 1);
 
     for (let i = 0; i < Math.min(text.length, maxLen); i++) {
         const ch = text[i];

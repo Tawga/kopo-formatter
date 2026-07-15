@@ -45,11 +45,54 @@ export function scan(source: string, format: SourceFormat): SourceLine[] {
     }
 }
 
+/** Length of the program-text area of a fixed-form line (cols 8-72). */
+const TEXT_AREA_LEN = PROGRAM_TEXT_END - (SEQ_NUMBER_END + 1);
+
+/**
+ * Detect whether a fixed-form file uses the identification area (cols 73-80),
+ * i.e. classic punched-card layout with sequence numbers / tags on the right.
+ *
+ * True when no line exceeds 80 columns and at least one line has non-blank
+ * content past column 72. Lines longer than 80 columns can only come from
+ * already-formatted output with line wrapping disabled (joined logical lines),
+ * so their presence disables truncation for the whole file.
+ */
+function hasIdentificationArea(lines: string[]): boolean {
+    let hasIdContent = false;
+    for (const raw of lines) {
+        const line = expandTabs(raw).trimEnd();
+        if (line.length > 80) return false;
+        if (line.length > PROGRAM_TEXT_END && line.substring(PROGRAM_TEXT_END).trim()) {
+            hasIdContent = true;
+        }
+    }
+    return hasIdContent;
+}
+
+/**
+ * Return the quote character of an unterminated string literal in `text`,
+ * or null if all literals are closed. Doubled quotes ("" or '') inside a
+ * literal toggle out and back in, which yields the correct open/closed state.
+ */
+function openLiteralQuote(text: string): string | null {
+    let quote: string | null = null;
+    for (const ch of text) {
+        if (quote) {
+            if (ch === quote) quote = null;
+        } else if (ch === '"' || ch === "'") {
+            quote = ch;
+        }
+    }
+    return quote;
+}
+
 function scanFixedForm(rawLines: string[]): SourceLine[] {
     const result: SourceLine[] = [];
+    const truncateIdArea = hasIdentificationArea(rawLines);
 
     for (let i = 0; i < rawLines.length; i++) {
-        const original = expandTabs(rawLines[i]);
+        const expanded = expandTabs(rawLines[i]);
+        const original = truncateIdArea ? expanded.substring(0, PROGRAM_TEXT_END) : expanded;
         const originalText = rawLines[i];
 
         // Blank line
@@ -105,8 +148,19 @@ function scanFixedForm(rawLines: string[]): SourceLine[] {
             if (result.length > 0) {
                 for (let j = result.length - 1; j >= 0; j--) {
                     if (!result[j].isComment && !result[j].isBlank) {
-                        // Trim the leading spaces of the continuation and append
-                        result[j].text = result[j].text.trimEnd() + " " + programText.trim();
+                        const prev = result[j];
+                        const quote = openLiteralQuote(prev.text);
+                        const contTrimmed = programText.trimStart();
+                        if (quote && contTrimmed.startsWith(quote)) {
+                            // Continued string literal: the previous line's text is part
+                            // of the literal through col 72 (short lines are space-padded,
+                            // as on punched cards), and the literal resumes with the
+                            // character right after the quote — no space is inserted.
+                            prev.text = prev.text.padEnd(TEXT_AREA_LEN, " ") + contTrimmed.substring(1);
+                        } else {
+                            // Word continuation: trim and join with a single space
+                            prev.text = prev.text.trimEnd() + " " + programText.trim();
+                        }
                         break;
                     }
                 }

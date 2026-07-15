@@ -35,11 +35,11 @@ The formatter uses a **parse → AST → print** pipeline rather than processing
 
 This extension is not yet published on the VS Code Marketplace. Build the `.vsix` from source and install it manually.
 
-1. Build the extension following the steps in [Building from Source](#building-from-source). A `.vsix` file will appear in the `build/` directory.
+1. Build the extension following the steps in [Building from Source](#building-from-source). A `.vsix` file will appear in the `packages/` directory.
 2. Open Visual Studio Code.
 3. Open the Extensions view (`Ctrl+Shift+X`).
 4. Click the **...** menu at the top right of the Extensions view.
-5. Select **Install from VSIX...** and pick the file from the `build/` folder.
+5. Select **Install from VSIX...** and pick the file from the `packages/` folder.
 6. Reload VS Code when prompted.
 
 ## Usage
@@ -86,7 +86,7 @@ npm test
 npm run package
 ```
 
-The `npm run build` command compiles TypeScript and bundles the extension into `dist/extension.js` via esbuild. The `npm run package` command additionally packages it as a `.vsix` file in the `build/` directory.
+The `npm run build` command compiles TypeScript and bundles the extension into `dist/extension.js` via esbuild. The `npm run package` command additionally packages it as a `.vsix` file in the `packages/` directory.
 
 ## Project Structure
 

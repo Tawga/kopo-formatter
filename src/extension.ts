@@ -32,6 +32,40 @@ function logOptions(options: Partial<FormatterOptions>): void {
     outputChannel.appendLine(`Options: ${JSON.stringify(options)}`);
 }
 
+/**
+ * Compute a minimal single edit covering only the changed region, instead of
+ * replacing the whole document. Keeps the cursor stable and diffs clean when
+ * most of the file is already formatted.
+ */
+function minimalEdits(document: vscode.TextDocument, formatted: string): vscode.TextEdit[] {
+    const original = document.getText();
+    if (original === formatted) return [];
+
+    let start = 0;
+    const minLen = Math.min(original.length, formatted.length);
+    while (start < minLen && original[start] === formatted[start]) start++;
+
+    let endOriginal = original.length;
+    let endFormatted = formatted.length;
+    while (endOriginal > start && endFormatted > start
+        && original[endOriginal - 1] === formatted[endFormatted - 1]) {
+        endOriginal--;
+        endFormatted--;
+    }
+
+    const range = new vscode.Range(
+        document.positionAt(start),
+        document.positionAt(endOriginal),
+    );
+    return [vscode.TextEdit.replace(range, formatted.substring(start, endFormatted))];
+}
+
+/** Language ids used by common COBOL extensions (ids are case-sensitive). */
+const COBOL_SELECTOR: vscode.DocumentSelector = [
+    { language: "COBOL" },
+    { language: "cobol" },
+];
+
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel("KOPO Formatter");
     context.subscriptions.push(outputChannel);
@@ -51,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     const disposable = vscode.languages.registerDocumentFormattingEditProvider(
-        "COBOL",
+        COBOL_SELECTOR,
         {
             provideDocumentFormattingEdits(
                 document: vscode.TextDocument,
@@ -70,11 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     for (const diag of result.diagnostics) {
                         outputChannel.appendLine(`[${diag.severity}] Line ${diag.line}: ${diag.message}`);
                     }
-                    const wholeDocument = new vscode.Range(
-                        document.positionAt(0),
-                        document.positionAt(text.length),
-                    );
-                    return [vscode.TextEdit.replace(wholeDocument, result.text)];
+                    return minimalEdits(document, result.text);
                 } catch (err) {
                     const message = err instanceof Error ? err.message : String(err);
                     outputChannel.appendLine(`ERROR: ${message}`);
@@ -87,9 +117,17 @@ export function activate(context: vscode.ExtensionContext): void {
             },
         },
     );
+    context.subscriptions.push(disposable);
+
+    // The command declared in package.json — delegates to the standard
+    // Format Document action, which routes through the provider above.
+    context.subscriptions.push(
+        vscode.commands.registerCommand("kopo-formatter.formatDocument", () =>
+            vscode.commands.executeCommand("editor.action.formatDocument"),
+        ),
+    );
 
     outputChannel.appendLine("KOPO Formatter: activated");
-    context.subscriptions.push(disposable);
 }
 
 export function deactivate(): void {}

@@ -199,10 +199,12 @@ function parseStatementSequence(
             const stmt = parseEvaluateStatement(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
+            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
         } else if (verb === "PERFORM" && isBlockPerform(upper, rawText)) {
             const stmt = parsePerformBlock(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
+            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
         } else if (verb === "READ") {
             const stmt = parseReadBlock(state, rawText, currentTrivia, "END-READ");
             stmts.push(stmt);
@@ -346,6 +348,7 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
 function parseEvaluateStatement(state: ParserState, headerText: string, leadingTrivia: Trivia[]): EvaluateStatement {
     const subjectText = headerText;
     const whenBranches: WhenBranch[] = [];
+    let periodTerminated = false;
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         const trivia = consumeTrivia(state);
@@ -362,14 +365,21 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
             state.pos++;
 
             const bodyTrivia = consumeTrivia(state);
-            const { stmts: body } = parseStatementSequence(state, bodyTrivia, ["WHEN", "WHEN OTHER", "END-EVALUATE"]);
+            const bodyResult = parseStatementSequence(state, bodyTrivia, ["WHEN", "WHEN OTHER", "END-EVALUATE"]);
 
             whenBranches.push({
                 kind: "WhenBranch",
                 conditionText,
-                body,
+                body: bodyResult.stmts,
                 leadingTrivia: trivia,
             });
+
+            // A period inside a WHEN body closes the EVALUATE (legacy style,
+            // no END-EVALUATE follows).
+            if (bodyResult.periodTerminated) {
+                periodTerminated = true;
+                break;
+            }
         } else if (!upper) {
             break;
         } else {
@@ -390,23 +400,43 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
         subjectText,
         whenBranches,
         leadingTrivia,
+        periodTerminated,
     };
 }
 
 function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia: Trivia[]): PerformBlock {
-    const bodyTrivia = consumeTrivia(state);
-    const { stmts: body } = parseStatementSequence(state, bodyTrivia, ["END-PERFORM"]);
+    // A PERFORM whose header ends with a period is complete on that line —
+    // the out-of-line form (e.g. "PERFORM CALC-PARA UNTIL DONE = 1.").
+    // It has no inline body and no END-PERFORM follows.
+    if (headerText.trimEnd().endsWith(".")) {
+        return {
+            kind: "PerformBlock",
+            clauseText: headerText,
+            body: [],
+            leadingTrivia,
+            periodTerminated: true,
+        };
+    }
 
+    const bodyTrivia = consumeTrivia(state);
+    const bodyResult = parseStatementSequence(state, bodyTrivia, ["END-PERFORM"]);
+
+    let periodTerminated = false;
     const endUpper = peekUpperText(state);
     if (endUpper.startsWith("END-PERFORM")) {
         state.pos++;
+    } else if (bodyResult.periodTerminated) {
+        // Legacy style: a period inside the body closed the PERFORM and
+        // no END-PERFORM follows — don't invent one when printing.
+        periodTerminated = true;
     }
 
     return {
         kind: "PerformBlock",
         clauseText: headerText,
-        body,
+        body: bodyResult.stmts,
         leadingTrivia,
+        periodTerminated,
     };
 }
 

@@ -140,6 +140,8 @@ export interface EvaluateStatement {
     subjectText: string;
     whenBranches: WhenBranch[];
     leadingTrivia: Trivia[];
+    /** True when the block was closed by a period rather than END-EVALUATE */
+    periodTerminated?: boolean;
 }
 
 export interface WhenBranch {
@@ -154,6 +156,8 @@ export interface PerformBlock {
     clauseText: string;
     body: ProcedureStatement[];
     leadingTrivia: Trivia[];
+    /** True when the block was closed by a period rather than END-PERFORM */
+    periodTerminated?: boolean;
 }
 
 export interface ReadBlock {

@@ -248,8 +248,10 @@ function printEvaluateStatement(
         }
     }
 
-    // END-EVALUATE
-    lines.push(buildLine(format, { areaA: false, indent, content: c("END-EVALUATE", options) }));
+    // END-EVALUATE only when block-structured (not closed by a period)
+    if (!stmt.periodTerminated) {
+        lines.push(buildLine(format, { areaA: false, indent, content: c("END-EVALUATE", options) }));
+    }
 
     return lines;
 }
@@ -271,8 +273,10 @@ function printPerformBlock(
         lines.push(...printStatement(child, depth + 1, options, format));
     }
 
-    // END-PERFORM
-    lines.push(buildLine(format, { areaA: false, indent, content: c("END-PERFORM", options) }));
+    // END-PERFORM only when block-structured (not closed by a period)
+    if (!stmt.periodTerminated) {
+        lines.push(buildLine(format, { areaA: false, indent, content: c("END-PERFORM", options) }));
+    }
 
     return lines;
 }

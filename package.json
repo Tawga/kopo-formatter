@@ -109,14 +109,7 @@
                     "description": "Align data names and DELIMITED BY clauses in STRING/UNSTRING statements so they start at consistent columns"
                 }
             }
-        },
-        "formatters": [
-            {
-                "language": "COBOL",
-                "displayName": "KOPO Cobol Formatter",
-                "id": "kopo"
-            }
-        ]
+        }
     },
     "scripts": {
         "compile": "tsc -p .",
