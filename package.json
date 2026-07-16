@@ -6,7 +6,7 @@
         "url": "https://github.com/Tawga/kopo-formatter"
     },
     "description": "Visual Studio Code extension to format Cobol files",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "engines": {
         "vscode": "^1.102.0"
     },

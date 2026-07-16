@@ -25,6 +25,7 @@ import {
     INDENT_END_KEYWORDS,
     PROCEDURE_VERBS,
     CONDITIONAL_VERBS,
+    COBOL_RESERVED_WORDS,
     type ConditionalVerbConfig,
 } from "../constants.js";
 import { parseExecBlock } from "./execBlockParser.js";
@@ -161,16 +162,17 @@ function parseDeclaratives(state: ParserState, leadingTrivia: Trivia[]): Declara
         } else {
             // Malformed content (declaratives must contain sections) — wrap
             // whatever we find in an anonymous section so nothing is lost.
-            const { stmts } = parseStatementSequence(state, trivia, ["END DECLARATIVES"]);
-            if (stmts.length > 0) {
+            const { stmts } = parseStatementSequence(state, [], ["END DECLARATIVES"]);
+            if (stmts.length > 0 || trivia.length > 0) {
                 decl.sections.push({
                     kind: "ProcedureSection",
                     name: "",
                     headerText: "",
                     leadingTrivia: [],
-                    paragraphs: [{ kind: "Paragraph", name: "", leadingTrivia: [], statements: stmts }],
+                    paragraphs: [{ kind: "Paragraph", name: "", leadingTrivia: trivia, statements: stmts }],
                 });
-            } else {
+            }
+            if (stmts.length === 0 && trivia.length === 0) {
                 break; // no progress — bail rather than loop forever
             }
         }
@@ -377,9 +379,11 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
     const thenBody: ProcedureStatement[] = [];
     let elseBody: ProcedureStatement[] = [];
 
-    // Parse THEN body until ELSE, END-IF, or a period-terminated statement
-    const thenTrivia = consumeTrivia(state);
-    const thenResult = parseStatementSequence(state, thenTrivia, ["END-IF", "ELSE"]);
+    // Parse THEN body until ELSE, END-IF, or a period-terminated statement.
+    // Trivia is NOT pre-consumed: the sequence takes it only when a real
+    // statement follows, so a comment before ELSE/END-IF stays in the stream
+    // for the enclosing construct instead of being dropped on an empty body.
+    const thenResult = parseStatementSequence(state, [], ["END-IF", "ELSE"]);
     thenBody.push(...thenResult.stmts);
 
     // If a period closed the then-body, the IF is period-terminated — no END-IF or ELSE
@@ -401,8 +405,7 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
         const trivia = consumeTrivia(state);
         if (trivia.length > 0) elseLeadingTrivia = trivia;
         state.pos++; // consume ELSE
-        const elseTrivia = consumeTrivia(state);
-        const elseResult = parseStatementSequence(state, elseTrivia, ["END-IF"]);
+        const elseResult = parseStatementSequence(state, [], ["END-IF"]);
         elseBody = elseResult.stmts;
 
         // If the ELSE body was terminated by a period, the whole IF is period-terminated —
@@ -472,8 +475,7 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
             const conditionText = whenLine.text.trim();
             state.pos++;
 
-            const bodyTrivia = consumeTrivia(state);
-            const bodyResult = parseStatementSequence(state, bodyTrivia, ["WHEN", "WHEN OTHER", "END-EVALUATE"]);
+            const bodyResult = parseStatementSequence(state, [], ["WHEN", "WHEN OTHER", "END-EVALUATE"]);
 
             whenBranches.push({
                 kind: "WhenBranch",
@@ -578,8 +580,7 @@ function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia
         };
     }
 
-    const bodyTrivia = consumeTrivia(state);
-    const bodyResult = parseStatementSequence(state, bodyTrivia, ["END-PERFORM"]);
+    const bodyResult = parseStatementSequence(state, [], ["END-PERFORM"]);
 
     let periodTerminated = false;
     let endTerminatorTrivia: Trivia[] | undefined;
@@ -805,8 +806,7 @@ function parseInlineConditionalBlock(
 
     // Following lines belong to the last inline clause's body, then the
     // regular clause-line loop takes over for further clauses / END-xxx.
-    const bodyTrivia = consumeTrivia(state);
-    const r = parseStatementSequence(state, bodyTrivia, [block.endTerminator, ...cfg.clauses]);
+    const r = parseStatementSequence(state, [], [block.endTerminator, ...cfg.clauses]);
     lastClause.body = r.stmts;
     if (r.periodTerminated) {
         block.periodTerminated = true;
@@ -870,8 +870,7 @@ function parseClauseLines(
                 break;
             }
 
-            const bodyTrivia = consumeTrivia(state);
-            const r = parseStatementSequence(state, bodyTrivia, [block.endTerminator, ...cfg.clauses]);
+            const r = parseStatementSequence(state, [], [block.endTerminator, ...cfg.clauses]);
             clause.body = r.stmts;
             if (r.periodTerminated) {
                 block.periodTerminated = true;
@@ -944,6 +943,10 @@ function isParagraphName(upper: string): boolean {
     if (AREA_B_STATEMENTS.some(s => s === name)) return false;
     if ([...INDENT_START_KEYWORDS, ...INDENT_END_KEYWORDS].some(k => k === name)) return false;
     if (name === "PERFORM" || name === "ELSE" || name === "WHEN") return false;
+    // A paragraph name can never be a COBOL reserved word — a lone "KEY." is
+    // the tail of a wrapped statement (e.g. "ACCEPT ... FROM ESCAPE KEY."),
+    // not a paragraph header.
+    if (COBOL_RESERVED_WORDS.has(name)) return false;
 
     return true;
 }

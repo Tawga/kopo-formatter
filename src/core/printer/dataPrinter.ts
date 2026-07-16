@@ -184,7 +184,10 @@ function alignClause(
     if (clauseIdx < 0) return null;
 
     const preClausePart = entry.rawText.substring(0, clauseIdx).trim();
-    const postClausePart = entry.rawText.substring(clauseIdx).trim();
+    // Collapse interior runs of spaces (literal-aware) so the printed width is
+    // deterministic — raw multi-space runs would flip line-wrap decisions
+    // between passes once a rejoin collapses them.
+    const postClausePart = normalizeSpaces(entry.rawText.substring(clauseIdx).trim());
     // Safe non-literal-aware collapse: text before PIC/VALUE cannot contain literals
     const normalizedPre = preClausePart.replace(/\s+/g, " ");
 

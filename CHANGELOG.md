@@ -4,6 +4,18 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.6.2] - 2026-07-16
+
+Fixes for six parser/printer bugs surfaced by expanding the test corpus from 4 to 26 real programs (the no-loss verifier and idempotency tests caught all of them; no lossy output ever reached a document).
+
+### Fixed
+
+- **Comments before `WHEN` / `ELSE` / `END-xxx` with an empty body are no longer dropped** — statement-sequence parsing no longer pre-consumes trivia; a comment now stays in the stream and attaches to the next construct. Previously the no-loss fallback refused to format such files.
+- **`SELECT` no longer swallows the following statement** — the continuation collector checked for the closing period only after appending the next line, so a select rejoined from a wrapped continuation absorbed the next `COPY` statement on the second pass.
+- **Deterministic wrapping of aligned data entries** — interior space runs in `PIC`/`VALUE` clauses are collapsed (literal-aware) and wrapped head pieces are trimmed, so line-wrap decisions no longer flip between passes.
+- **Lines with content only in the sequence area (e.g. a lone `*` in column 1) are treated as blank** — previously they became empty "code" lines that halted every parser loop and dumped the rest of the division into raw passthrough.
+- **A COBOL reserved word is never taken as a paragraph name** — a lone `KEY.` (tail of a wrapped `ACCEPT ... FROM ESCAPE KEY.`) was parsed as a paragraph header, splitting the statement and re-nesting `END-ACCEPT` deeper on every pass.
+
 ## [0.6.1] - 2026-07-16
 
 ### Added

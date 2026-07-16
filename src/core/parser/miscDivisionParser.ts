@@ -67,17 +67,19 @@ export function parseEnvironmentChildren(state: ParserState): DivisionChild[] {
             children.push(section);
         } else if (upper.startsWith("SELECT")) {
             const line = state.lines[state.pos];
-            // Collect continuation lines for SELECT
+            // Collect continuation lines for SELECT — but only while the
+            // sentence is still open. A SELECT already ending with "." (e.g.
+            // rejoined from a wrapped continuation) must not swallow the
+            // following statement.
             let rawText = line.text.trim();
             state.pos++;
-            while (state.pos < state.lines.length) {
+            while (state.pos < state.lines.length && !rawText.endsWith(".")) {
                 const nextLine = state.lines[state.pos];
                 if (nextLine.isBlank || nextLine.isComment) break;
                 const nextUpper = nextLine.text.trim().toUpperCase();
                 if (isAtDivisionHeader(state) || isSectionOrSelectStart(nextUpper)) break;
                 rawText += " " + nextLine.text.trim();
                 state.pos++;
-                if (rawText.endsWith(".")) break;
             }
             const select: SelectEntry = {
                 kind: "SelectEntry",
@@ -127,16 +129,16 @@ function parseEnvironmentSection(state: ParserState, leadingTrivia: import("../t
 
         if (upper.startsWith("SELECT")) {
             const line = state.lines[state.pos];
+            // See parseEnvironmentChildren: never collect past a closed sentence.
             let rawText = line.text.trim();
             state.pos++;
-            while (state.pos < state.lines.length) {
+            while (state.pos < state.lines.length && !rawText.endsWith(".")) {
                 const nextLine = state.lines[state.pos];
                 if (nextLine.isBlank || nextLine.isComment) break;
                 const nextUpper = nextLine.text.trim().toUpperCase();
                 if (isAtDivisionHeader(state) || isSectionOrSelectStart(nextUpper)) break;
                 rawText += " " + nextLine.text.trim();
                 state.pos++;
-                if (rawText.endsWith(".")) break;
             }
             section.children.push({
                 kind: "SelectEntry",

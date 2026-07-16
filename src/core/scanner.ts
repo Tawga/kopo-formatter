@@ -214,6 +214,22 @@ function scanFixedForm(rawLines: string[], opts: ScanOptions = {}): SourceLine[]
             ? original.substring(SEQ_NUMBER_END + 1)
             : "";
 
+        // A line with content only in the sequence area (cols 1-6, e.g. a lone
+        // "*" in col 1) has no program text — treat it as blank. Keeping it as
+        // an empty "code" line would make every peek-based parser loop stop at
+        // it and throw the rest of the division into unparsed passthrough.
+        if (!programText.trim()) {
+            result.push({
+                text: "",
+                originalLine: i,
+                isComment: false,
+                isBlank: true,
+                indicator: " ",
+                originalText,
+            });
+            continue;
+        }
+
         result.push({
             text: programText,
             originalLine: i,

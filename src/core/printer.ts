@@ -107,7 +107,10 @@ function wrapFixedLine(line: string, useDash: boolean = true): string[] {
     if (splitAt <= 0) return [line]; // Can't split safely
 
     const prefix = line.substring(0, FIXED_PREFIX_LEN);
-    const firstPart = content.substring(0, splitAt);
+    // trimEnd: a split at the last space of a run must not leave trailing
+    // spaces on the head piece — rescanning would rejoin with a single space
+    // and change the line width, breaking idempotency.
+    const firstPart = content.substring(0, splitAt).trimEnd();
     const rest = content.substring(splitAt).trimStart();
 
     const continuationLine = contPfx + rest;
