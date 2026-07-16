@@ -14,6 +14,7 @@ import {
 } from "./types.js";
 import { buildLine } from "./layout.js";
 import { applyCase } from "./caseNormalizer.js";
+import { openLiteralQuote } from "./scanner.js";
 import {
     computeAlignment,
     printDataEntry,
@@ -104,7 +105,7 @@ function wrapFixedLine(line: string, useDash: boolean = true): string[] {
     const contPfx = "      " + contIndicator + " ".repeat(effectiveSpaces);
 
     const splitAt = findSplitPoint(content, FIXED_CONTENT_MAX);
-    if (splitAt <= 0) return [line]; // Can't split safely
+    if (splitAt <= 0) return splitLongLiteralLine(line, useDash);
 
     const prefix = line.substring(0, FIXED_PREFIX_LEN);
     // trimEnd: a split at the last space of a run must not leave trailing
@@ -119,6 +120,37 @@ function wrapFixedLine(line: string, useDash: boolean = true): string[] {
         return [prefix + firstPart, ...wrapFixedLine(continuationLine, useDash)];
     }
     return [prefix + firstPart, continuationLine];
+}
+
+/**
+ * Split a line that has no safe space split point by cutting INSIDE a string
+ * literal at the column-72 boundary, using COBOL's literal-continuation form:
+ * the head fills the text area exactly to col 72 and the continuation line
+ * re-opens with the quote character right after the "-" indicator. The
+ * scanner rejoins this form byte-exactly (no space inserted, no padding).
+ *
+ * Without this, an unsplittable long literal is emitted wider than col 72;
+ * if it stays within 80 columns, a rescan misdetects an identification area
+ * and silently truncates the tail as sequence numbers.
+ */
+function splitLongLiteralLine(line: string, useDash: boolean): string[] {
+    // Space-indicator wrapping (omitContinuationLines) cannot re-open literals.
+    if (!useDash) return [line];
+
+    const head = line.substring(0, FIXED_MAX_COL);
+    const tail = line.substring(FIXED_MAX_COL);
+    if (!tail) return [line];
+
+    const quote = openLiteralQuote(head);
+    if (!quote) return [line]; // col-72 boundary is not inside a literal
+    // Boundary right after a quote char is ambiguous (doubled-quote pair vs.
+    // closing quote) — leave the line long rather than risk corruption.
+    if (head.endsWith(quote)) return [line];
+
+    const cont = "      -   " + quote + tail;
+    return cont.length > FIXED_MAX_COL
+        ? [head, ...wrapFixedLine(cont, useDash)]
+        : [head, cont];
 }
 
 /**

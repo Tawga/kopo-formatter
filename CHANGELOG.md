@@ -4,6 +4,12 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.6.3] - 2026-07-16
+
+### Fixed
+
+- **Unsplittable long literals are wrapped as literal continuations instead of overflowing column 72** — a line whose string literal left no space to split at was emitted wider than column 72; if it stayed within 80 columns, reformatting the output misdetected a punched-card identification area and silently truncated the literal's tail. The wrapper now cuts inside the literal at exactly column 72 and re-opens the quote after the `-` indicator (the scanner rejoins this form byte-exactly), so every emitted line stays within column 72 and the split round-trips losslessly. Found by the idempotency test on a 59-program corpus — this was the one loss mode the token verifier is inherently blind to, since scanning applies the same identification-area truncation to both sides of the comparison.
+
 ## [0.6.2] - 2026-07-16
 
 Fixes for six parser/printer bugs surfaced by expanding the test corpus from 4 to 26 real programs (the no-loss verifier and idempotency tests caught all of them; no lossy output ever reached a document).

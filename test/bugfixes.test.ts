@@ -175,7 +175,7 @@ describe("identification area handling", () => {
 // ─── Line wrapping safety ─────────────────────────────────────────────────────
 
 describe("line wrapping safety", () => {
-    it("does not overflow when a long literal leaves no safe split point", () => {
+    it("splits an unbreakable long literal as a literal continuation", () => {
         const longLiteral = '"' + "X".repeat(70) + '"';
         const source = fixed([
             " PROCEDURE DIVISION.",
@@ -184,13 +184,22 @@ describe("line wrapping safety", () => {
         ]);
         // Must terminate (no infinite recursion) and preserve the literal
         const result = fmt(source);
-        expect(result).toContain("X".repeat(70));
-        // No output line consists solely of indent (garbage split inside the indent)
+        // The literal is split with COBOL literal continuation: the head fills
+        // to col 72 and the continuation re-opens with the quote after "-".
+        expect(result).toMatch(/\n {6}-\s+"X+/);
+        // All X's survive across the split (70 in the literal + 1 in WS-X)
+        expect((result.match(/X/g) ?? []).length).toBe(71);
+        // No emitted line exceeds col 72 (an over-72 line within 80 cols would
+        // make a rescan misdetect an identification area and truncate it)
         for (const line of lines(result)) {
+            expect(line.length).toBeLessThanOrEqual(72);
+            // No output line consists solely of indent (garbage split inside the indent)
             if (line.length > 7) {
                 expect(line.substring(7).trim().length).toBeGreaterThan(0);
             }
         }
+        // The split round-trips: reformatting reproduces the same text
+        expect(fmt(result)).toBe(result);
     });
 });
 

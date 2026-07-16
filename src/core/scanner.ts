@@ -83,7 +83,7 @@ function hasIdentificationArea(lines: string[]): boolean {
  * or null if all literals are closed. Doubled quotes ("" or '') inside a
  * literal toggle out and back in, which yields the correct open/closed state.
  */
-function openLiteralQuote(text: string): string | null {
+export function openLiteralQuote(text: string): string | null {
     let quote: string | null = null;
     for (const ch of text) {
         if (quote) {
