@@ -6,7 +6,7 @@
         "url": "https://github.com/Tawga/kopo-formatter"
     },
     "description": "Visual Studio Code extension to format Cobol files",
-    "version": "0.6.3",
+    "version": "0.6.5",
     "engines": {
         "vscode": "^1.102.0"
     },
@@ -23,6 +23,14 @@
             {
                 "command": "kopo-formatter.formatDocument",
                 "title": "Format COBOL Document"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "kopo-formatter.formatDocument",
+                "key": "ctrl+alt+f",
+                "mac": "cmd+alt+f",
+                "when": "editorTextFocus && (editorLangId == COBOL || editorLangId == cobol)"
             }
         ],
         "configuration": {

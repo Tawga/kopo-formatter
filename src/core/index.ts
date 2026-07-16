@@ -55,7 +55,19 @@ export function formatWithDiagnostics(source: string, options: Partial<Formatter
         return { text: source, diagnostics: [...diagnostics, ...verification.diagnostics] };
     }
 
-    return { text: output, diagnostics };
+    return { text: matchEol(output, source), diagnostics };
+}
+
+/**
+ * The printer always joins lines with "\n". If the source file uses CRLF,
+ * convert the output back to CRLF so formatting doesn't rewrite every line
+ * ending — an editor applying a change that touches every single line has no
+ * way to preserve the cursor position and jumps it to the end of the edit.
+ */
+function matchEol(text: string, source: string): string {
+    const crlf = (source.match(/\r\n/g) ?? []).length;
+    const lfOnly = (source.match(/(?<!\r)\n/g) ?? []).length;
+    return crlf > lfOnly ? text.replace(/\n/g, "\r\n") : text;
 }
 
 /**

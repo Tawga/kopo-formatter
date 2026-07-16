@@ -106,6 +106,24 @@ describe("former silent-drop sites keep every token", () => {
         expect(out).toContain("'A  B'");
     });
 
+    it("ELSE IF on one line keeps the nested condition", () => {
+        const out = expectLossless([
+            fx("PROCEDURE DIVISION."),
+            fx("PARA-1."),
+            fx("    IF X-PARA-SALASANA > SPACES"),
+            fx("       PERFORM AUTHMAIL-BAT"),
+            fx("    ELSE IF CLEAN-IMPORT = \"K\""),
+            fx("       PERFORM MAILBAT-KOMENTO-CLEAN"),
+            fx("    ELSE"),
+            fx("       PERFORM MAILBAT-KOMENTO"),
+            fx("    END-IF."),
+            fx("    WRITE MAILBAT-RIVI AFTER 0."),
+        ].join("\n"));
+        expect(out).toContain("CLEAN-IMPORT");
+        expect(out).toContain("MAILBAT-KOMENTO-CLEAN");
+        expect(out).toContain("WRITE MAILBAT-RIVI");
+    });
+
     it("explicit scope terminator keeps its sentence period", () => {
         const out = expectLossless([
             fx("PROCEDURE DIVISION."),

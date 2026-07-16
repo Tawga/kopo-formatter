@@ -288,3 +288,54 @@ describe("idempotency of bugfix cases", () => {
         });
     }
 });
+
+// ─── CRLF line-ending preservation ────────────────────────────────────────────
+
+describe("CRLF preservation", () => {
+    it("keeps CRLF line endings when the source uses them", () => {
+        const source = fixed([
+            " PROCEDURE DIVISION.",
+            " MAIN-PARA.",
+            "     MOVE 1 TO X.",
+            "     STOP RUN.",
+        ]).replace(/\n/g, "\r\n");
+        const result = fmt(source);
+        expect(result).not.toMatch(/(?<!\r)\n/);
+        expect(result.split("\r\n").length).toBeGreaterThan(1);
+    });
+
+    it("does not rewrite unrelated lines when a CRLF document gets one small edit", () => {
+        const formattedOnce = fmt(fixed([
+            " PROCEDURE DIVISION.",
+            " MAIN-PARA.",
+            "     MOVE 1 TO X.",
+            "     MOVE 2 TO Y.",
+            "     STOP RUN.",
+        ]).replace(/\n/g, "\r\n"));
+
+        const linesArr = formattedOnce.split("\r\n");
+        const editedIdx = linesArr.findIndex(l => l.includes("MOVE 2 TO Y"));
+        linesArr[editedIdx] = linesArr[editedIdx] + "   "; // trailing whitespace to be cleaned up
+        const tweaked = linesArr.join("\r\n");
+
+        const reformatted = fmt(tweaked);
+        expect(reformatted).toBe(formattedOnce);
+
+        // The edit should be localized: everything before/after the touched
+        // line stays byte-identical, not just equal after reformatting.
+        let start = 0;
+        const minLen = Math.min(tweaked.length, reformatted.length);
+        while (start < minLen && tweaked[start] === reformatted[start]) start++;
+        let endTweaked = tweaked.length;
+        let endReformatted = reformatted.length;
+        while (
+            endTweaked > start && endReformatted > start
+            && tweaked[endTweaked - 1] === reformatted[endReformatted - 1]
+        ) {
+            endTweaked--;
+            endReformatted--;
+        }
+        const changedSpan = endTweaked - start;
+        expect(changedSpan).toBeLessThan(10);
+    });
+});

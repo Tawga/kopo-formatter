@@ -4,6 +4,19 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.6.5] - 2026-07-16
+
+### Fixed
+
+- **`ELSE IF` on one line no longer loses the nested condition** — the parser assumed `ELSE` always sits alone on its line and consumed the whole line, so in `ELSE IF CLEAN-IMPORT = "K"` the nested `IF` condition was dropped and the rest of the chain collapsed (caught in production by the no-loss verifier, which left the document unchanged). A statement following `ELSE` on the same line is now parsed as the first statement of the else body, so `ELSE IF` chains nest correctly under the shared `END-IF.`. The `ELSE` match is also stricter: a line starting with `ELSEX...` no longer matches as `ELSE`.
+- **Cursor no longer jumps to the end of the document after formatting** — the printer always joined lines with `\n`, so formatting a CRLF file (the common case on Windows/mainframe COBOL sources) silently rewrote every line ending to LF. That turned the "minimal edit" computed for VS Code into a single edit spanning almost the entire file (confirmed: 100% of the document on a real CRLF sample), which VS Code can only resolve by moving the cursor to the end of the edit. The formatter now detects the source's line ending and matches it in the output, so re-formatting an already-formatted CRLF file with one small change produces a tiny, localized edit again and the cursor stays put.
+
+## [0.6.4] - 2026-07-16
+
+### Added
+
+- **Keyboard shortcut for Format COBOL Document** — `Ctrl+Alt+F` (`Cmd+Alt+F` on macOS) now runs `kopo-formatter.formatDocument` when a COBOL editor has focus. Previously the command had no keybinding and showed blank in the Keyboard Shortcuts column of the extension's Commands panel.
+
 ## [0.6.3] - 2026-07-16
 
 ### Fixed

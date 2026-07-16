@@ -401,10 +401,23 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
     // Check if we hit ELSE (peeking past any comments before it)
     let elseLeadingTrivia: Trivia[] | undefined;
     const elsePeek = peekPastTrivia(state);
-    if (elsePeek.nextUpper.startsWith("ELSE")) {
+    if (elsePeek.nextUpper === "ELSE" || elsePeek.nextUpper.startsWith("ELSE ") || elsePeek.nextUpper === "ELSE.") {
         const trivia = consumeTrivia(state);
         if (trivia.length > 0) elseLeadingTrivia = trivia;
-        state.pos++; // consume ELSE
+
+        const elseLine = state.lines[state.pos];
+        const afterElse = elseLine.text.trim().substring("ELSE".length).trim();
+        if (afterElse && afterElse !== ".") {
+            // "ELSE IF ..." / "ELSE PERFORM X." — a statement starts on the
+            // ELSE line itself. Strip the ELSE keyword in place and let the
+            // sequence parser take this line as the first else-body statement
+            // (it may open a nested block continuing on following lines).
+            const idx = elseLine.text.toUpperCase().indexOf("ELSE");
+            elseLine.text = elseLine.text.substring(0, idx) + elseLine.text.substring(idx + "ELSE".length).trimStart();
+        } else {
+            state.pos++; // consume the bare ELSE line
+        }
+
         const elseResult = parseStatementSequence(state, [], ["END-IF"]);
         elseBody = elseResult.stmts;
 
