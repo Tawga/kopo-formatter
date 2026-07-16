@@ -216,6 +216,34 @@ export interface Declaratives {
     endLeadingTrivia: Trivia[];
 }
 
+/** One verbatim interior line of an EXEC block (original columns preserved) */
+export interface ExecBodyLine {
+    /** Text area content exactly as scanned (cols 8-72), including leading spaces */
+    text: string;
+    /** Indicator character (col 7): " " for code, "*" or "/" for comments */
+    indicator: string;
+}
+
+/**
+ * An EXEC SQL / EXEC CICS ... END-EXEC block. The interior is foreign syntax
+ * with its own layout, so it is passed through completely verbatim — no case
+ * normalization, no whitespace collapsing, no re-indentation. Only the EXEC
+ * header and END-EXEC frame participate in COBOL indentation.
+ */
+export interface ExecBlock {
+    kind: "ExecBlock";
+    /** The EXEC line as written (trimmed), e.g. "EXEC SQL" — may already
+     *  contain the whole statement incl. END-EXEC for single-line blocks */
+    headerText: string;
+    /** Interior lines, verbatim */
+    bodyLines: ExecBodyLine[];
+    /** The END-EXEC line as written (trimmed), "" when inline in the header or missing */
+    endText: string;
+    leadingTrivia: Trivia[];
+    /** True when the sentence ended with a period (on END-EXEC or the single line) */
+    periodTerminated?: boolean;
+}
+
 /** Fallback for lines the parser cannot understand */
 export interface UnparsedLine {
     kind: "UnparsedLine";
@@ -232,6 +260,7 @@ export type ProcedureStatement =
     | EvaluateStatement
     | PerformBlock
     | ConditionalBlock
+    | ExecBlock
     | UnparsedLine;
 
 export type SectionChild =
@@ -240,6 +269,7 @@ export type SectionChild =
     | SelectEntry
     | CopyStatement
     | DivisionEntry
+    | ExecBlock
     | UnparsedLine;
 
 export type DivisionChild =
@@ -252,6 +282,7 @@ export type DivisionChild =
     | Paragraph
     | ProcedureSection
     | Declaratives
+    | ExecBlock
     | UnparsedLine;
 
 export type TopLevelNode =

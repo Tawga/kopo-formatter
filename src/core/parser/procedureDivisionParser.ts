@@ -26,6 +26,7 @@ import {
     CONDITIONAL_VERBS,
     type ConditionalVerbConfig,
 } from "../constants.js";
+import { parseExecBlock } from "./execBlockParser.js";
 
 /**
  * Parse children of the Procedure Division.
@@ -269,6 +270,11 @@ function parseStatementSequence(
             if (stmt.periodTerminated) return { stmts, periodTerminated: true };
         } else if (verb === "PERFORM" && isBlockPerform(upper)) {
             const stmt = parsePerformBlock(state, rawText, currentTrivia);
+            stmts.push(stmt);
+            currentTrivia = [];
+            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
+        } else if (verb === "EXEC") {
+            const stmt = parseExecBlock(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
             if (stmt.periodTerminated) return { stmts, periodTerminated: true };

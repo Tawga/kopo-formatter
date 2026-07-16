@@ -124,6 +124,20 @@ function scanFixedForm(rawLines: string[]): SourceLine[] {
             continue;
         }
 
+        // Compiler directive lines ($ in col 7, e.g. ACUCOBOL "$XFD ...")
+        // — preserved verbatim with their indicator, like comments
+        if (indicator === "$") {
+            result.push({
+                text: original.length > SEQ_NUMBER_END + 1 ? original.substring(SEQ_NUMBER_END + 1) : "",
+                originalLine: i,
+                isComment: true,
+                isBlank: false,
+                indicator,
+                originalText,
+            });
+            continue;
+        }
+
         // Debug lines (D in col 7) - treat as comments for formatting
         if (indicator === "D" || indicator === "d") {
             result.push({

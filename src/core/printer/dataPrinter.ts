@@ -14,11 +14,20 @@ import {
 import { AREA_A_START } from "../constants.js";
 import { buildLine } from "../layout.js";
 import { applyCase, applyKeywordCase } from "../caseNormalizer.js";
+import { printExecBlock } from "./execPrinter.js";
 
 export interface AlignmentMap {
     /** Maps indent depth (in spaces) to the column where PIC/VALUE should start */
     picAlignment: Map<number, number>;
 }
+
+/**
+ * Upper bound for the PIC/VALUE alignment column. A single outlier entry
+ * (e.g. a long REDEFINES) must not drag the whole group's PIC column so far
+ * right that ordinary clauses wrap past column 72; outliers simply get the
+ * minimum 2-space padding instead.
+ */
+const MAX_PIC_ALIGNMENT_COLUMN = 49;
 
 /**
  * Compute alignment columns for PIC and VALUE clauses.
@@ -32,9 +41,10 @@ export function computeAlignment(
     const picAlignment = new Map<number, number>();
     collectAlignmentInfo(entries, options, depth, picAlignment);
 
-    // Add padding to all maximums
+    // Add padding to all maximums, capped so outliers can't push the whole
+    // group into line-wrapping territory
     for (const [key, value] of picAlignment.entries()) {
-        picAlignment.set(key, value + 4);
+        picAlignment.set(key, Math.min(value + 4, MAX_PIC_ALIGNMENT_COLUMN));
     }
 
     return { picAlignment };
@@ -238,6 +248,9 @@ export function printDataSection(
                 break;
             case "CopyStatement":
                 lines.push(...printCopyStatement(child, 0, options, format));
+                break;
+            case "ExecBlock":
+                lines.push(...printExecBlock(child, 0, options, format));
                 break;
             case "UnparsedLine":
                 lines.push(...printTrivia(child.leadingTrivia, format));

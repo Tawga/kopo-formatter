@@ -11,8 +11,9 @@ const OUTPUT_DIR = path.join(__dirname, "test_output");
 // Every COBOL source dropped into test_material/ is picked up automatically
 const FILES = fs.readdirSync(MATERIAL_DIR).filter(f => /\.(cbl|cob|cpy)$/i.test(f));
 
-// Space=normal, *=comment, /=comment+eject, -=continuation, D=debug line
-const VALID_INDICATORS = new Set([" ", "*", "/", "-", "D"]);
+// Space=normal, *=comment, /=comment+eject, -=continuation, D=debug line,
+// $=compiler directive (ACUCOBOL $XFD etc.)
+const VALID_INDICATORS = new Set([" ", "*", "/", "-", "D", "$"]);
 
 describe.each(FILES)("material file: %s", (filename) => {
     it("formats without error and writes output", () => {

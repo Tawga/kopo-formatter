@@ -9,8 +9,8 @@ import {
     type Section,
     type DivisionEntry,
     type SelectEntry,
-    type CopyStatement,
 } from "../types.js";
+import { parseCopyStatement } from "./dataDivisionParser.js";
 
 /**
  * Parse children of the Identification Division.
@@ -144,13 +144,7 @@ function parseEnvironmentSection(state: ParserState, leadingTrivia: import("../t
                 leadingTrivia: trivia,
             });
         } else if (upper.startsWith("COPY ")) {
-            const line = state.lines[state.pos];
-            section.children.push({
-                kind: "CopyStatement",
-                rawText: line.text.trim(),
-                leadingTrivia: trivia,
-            } satisfies CopyStatement);
-            state.pos++;
+            section.children.push(parseCopyStatement(state, trivia));
         } else {
             const line = state.lines[state.pos];
             section.children.push({

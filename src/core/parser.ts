@@ -15,7 +15,7 @@ import {
     type UnparsedLine,
     type Diagnostic,
 } from "./types.js";
-import { DIVISION_KEYWORDS } from "./constants.js";
+import { DIVISION_KEYWORDS, DATA_SECTION_KEYWORDS, PROCEDURE_VERBS } from "./constants.js";
 import { parseDataDivisionChildren } from "./parser/dataDivisionParser.js";
 import { parseProcedureDivisionChildren } from "./parser/procedureDivisionParser.js";
 import { parseIdentificationChildren, parseEnvironmentChildren } from "./parser/miscDivisionParser.js";
@@ -31,6 +31,44 @@ export function parse(lines: SourceLine[], format: SourceFormat): SourceFile {
     const state: ParserState = { lines, pos: 0, format, diagnostics: [] };
     const children: TopLevelNode[] = [];
     const trailingTrivia: Trivia[] = [];
+
+    // Fragment mode: a file with no division header at all (a copybook).
+    // Detect what kind of content it holds and parse it with the matching
+    // division parser inside a synthetic, header-less division node.
+    const hasDivisions = lines.some(
+        l => !l.isComment && !l.isBlank && isDivisionHeaderText(l.text.trim().toUpperCase()),
+    );
+    if (!hasDivisions) {
+        const fragmentKind = detectFragmentKind(lines);
+        if (fragmentKind) {
+            const division: Division = {
+                kind: "Division",
+                divisionType: fragmentKind,
+                headerText: "",
+                leadingTrivia: [],
+                children: [],
+            };
+            switch (fragmentKind) {
+                case "EnvironmentDivision":
+                    division.children = parseEnvironmentChildren(state);
+                    break;
+                case "ProcedureDivision":
+                    division.children = parseProcedureDivisionChildren(state);
+                    break;
+                default:
+                    division.children = parseDataDivisionChildren(state);
+                    break;
+            }
+            trailingTrivia.push(...consumeTrivia(state));
+            return {
+                kind: "SourceFile",
+                format,
+                children: [division],
+                trailingTrivia,
+                diagnostics: state.diagnostics,
+            };
+        }
+    }
 
     while (state.pos < state.lines.length) {
         const triviaBeforeDiv = consumeTrivia(state);
@@ -106,6 +144,40 @@ function matchDivisionKind(upper: string): DivisionKind | null {
  */
 export function isDivisionHeaderText(upper: string): boolean {
     return matchDivisionKind(upper) !== null;
+}
+
+/**
+ * Decide what kind of content a header-less fragment (copybook) holds by
+ * inspecting its first real line:
+ * - level numbers / FD / data section headers → Data Division content
+ * - SELECT entries → Environment Division content (FILE-CONTROL copybooks)
+ * - a known procedure verb or a paragraph header → Procedure Division content
+ *
+ * Defaults to Data Division — the dominant copybook kind — when the first
+ * line is inconclusive. Returns null for files with no real content.
+ */
+function detectFragmentKind(lines: SourceLine[]): DivisionKind | null {
+    for (const line of lines) {
+        if (line.isComment || line.isBlank) continue;
+        const upper = line.text.trim().toUpperCase();
+
+        if (/^\d{1,2}(\s|$)/.test(upper) || /^FD(\s|$)/.test(upper)
+            || DATA_SECTION_KEYWORDS.some(k => upper.startsWith(k))) {
+            return "DataDivision";
+        }
+        if (/^SELECT(\s|$)/.test(upper)) {
+            return "EnvironmentDivision";
+        }
+        const firstWord = upper.match(/^([A-Z][\w-]*)/)?.[1] ?? "";
+        if (PROCEDURE_VERBS.some(v => v.split(" ")[0] === firstWord)) {
+            return "ProcedureDivision";
+        }
+        if (/^[A-Z0-9][\w-]*\.\s*$/.test(upper)) {
+            return "ProcedureDivision"; // paragraph header
+        }
+        return "DataDivision";
+    }
+    return null;
 }
 
 function parseDivision(

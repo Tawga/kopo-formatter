@@ -25,6 +25,7 @@ import {
     printProcedureSection,
     printParagraph,
 } from "./printer/procedurePrinter.js";
+import { printExecBlock } from "./printer/execPrinter.js";
 
 // ─── Line wrapping ────────────────────────────────────────────────────────────
 
@@ -211,7 +212,11 @@ function printDivision(
     const lines: string[] = [];
 
     lines.push(...printTrivia(division.leadingTrivia, format));
-    lines.push(buildLine(format, { areaA: true, content: applyCase(division.headerText, options) }));
+    // Fragment files (copybooks) are parsed into a synthetic division with no
+    // header line — print only the content.
+    if (division.headerText) {
+        lines.push(buildLine(format, { areaA: true, content: applyCase(division.headerText, options) }));
+    }
 
     switch (division.divisionType) {
         case "DataDivision":
@@ -250,13 +255,18 @@ function printDataDivisionChildren(
                 lines.push(...printDataSection(child, options, format, alignment));
                 break;
             case "DataEntry":
-                lines.push(...printDataEntry(child, 0, options, format, alignment, ""));
+                // Entries directly under the division (typical for copybook
+                // fragments) align like working-storage entries.
+                lines.push(...printDataEntry(child, 0, options, format, alignment, "WORKING-STORAGE"));
                 break;
             case "FdEntry":
                 lines.push(...printFdEntry(child, options, format, alignment));
                 break;
             case "CopyStatement":
                 lines.push(...printCopyStatement(child, 0, options, format));
+                break;
+            case "ExecBlock":
+                lines.push(...printExecBlock(child, 0, options, format));
                 break;
             case "UnparsedLine":
                 lines.push(...printTrivia(child.leadingTrivia, format));

@@ -13,6 +13,32 @@ import {
     type UnparsedLine,
 } from "../types.js";
 import { DATA_SECTION_KEYWORDS, AREA_A_KEYWORDS } from "../constants.js";
+import { parseExecBlock } from "./execBlockParser.js";
+
+/**
+ * Parse a COPY statement, collecting continuation lines until the closing
+ * period — "COPY x REPLACING ==A== BY ==B==." may span several lines.
+ * The statement is kept as one logical unit in rawText.
+ */
+export function parseCopyStatement(state: ParserState, leadingTrivia: import("../types.js").Trivia[]): CopyStatement {
+    const line = state.lines[state.pos];
+    let rawText = line.text.trim();
+    state.pos++;
+
+    while (state.pos < state.lines.length && !rawText.endsWith(".")) {
+        const next = state.lines[state.pos];
+        if (next.isBlank || next.isComment) break;
+        const nextUpper = next.text.trim().toUpperCase();
+        // Defensive stops: a new entry means the period was simply missing.
+        if (isDivisionHeaderText(nextUpper) || isDataSectionHeader(nextUpper)
+            || /^\d{2}\s/.test(nextUpper) || /^FD\b/.test(nextUpper)
+            || nextUpper.startsWith("COPY ")) break;
+        rawText += " " + next.text.trim();
+        state.pos++;
+    }
+
+    return { kind: "CopyStatement", rawText, leadingTrivia };
+}
 
 /**
  * Parse children of the Data Division.
@@ -36,13 +62,11 @@ export function parseDataDivisionChildren(state: ParserState): DivisionChild[] {
             const fd = parseFdEntry(state, trivia);
             children.push(fd);
         } else if (upper.startsWith("COPY ")) {
+            children.push(parseCopyStatement(state, trivia));
+        } else if (upper.startsWith("EXEC ")) {
             const line = state.lines[state.pos];
-            children.push({
-                kind: "CopyStatement",
-                rawText: line.text.trim(),
-                leadingTrivia: trivia,
-            } satisfies CopyStatement);
             state.pos++;
+            children.push(parseExecBlock(state, line.text.trim(), trivia));
         } else if (/^\d{2}\s+/.test(upper) || /^\d{2}\s*$/.test(upper)) {
             // Data entry outside a section (shouldn't happen often)
             const entries = parseDataEntries(state, trivia);
@@ -98,13 +122,11 @@ function parseDataSection(state: ParserState, leadingTrivia: import("../types.js
             const fd = parseFdEntry(state, trivia);
             section.children.push(fd);
         } else if (upper.startsWith("COPY ")) {
+            section.children.push(parseCopyStatement(state, trivia));
+        } else if (upper.startsWith("EXEC ")) {
             const line = state.lines[state.pos];
-            section.children.push({
-                kind: "CopyStatement",
-                rawText: line.text.trim(),
-                leadingTrivia: trivia,
-            } satisfies CopyStatement);
             state.pos++;
+            section.children.push(parseExecBlock(state, line.text.trim(), trivia));
         } else if (/^\d{2}\s/.test(upper) || /^\d{2}$/.test(upper)) {
             const entries = parseDataEntries(state, trivia);
             section.children.push(...entries);

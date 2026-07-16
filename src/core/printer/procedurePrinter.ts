@@ -17,6 +17,7 @@ import {
 } from "../types.js";
 import { buildLine } from "../layout.js";
 import { printTrivia } from "./dataPrinter.js";
+import { printExecBlock } from "./execPrinter.js";
 import { applyCase } from "../caseNormalizer.js";
 
 /** Shorthand: apply case normalization to a content string. */
@@ -95,6 +96,8 @@ export function printStatement(
             return printPerformBlock(stmt, depth, options, format);
         case "ConditionalBlock":
             return printConditionalBlock(stmt, depth, options, format);
+        case "ExecBlock":
+            return printExecBlock(stmt, depth, options, format);
         case "UnparsedLine":
             return printUnparsedStatement(stmt, depth, options, format);
         default:

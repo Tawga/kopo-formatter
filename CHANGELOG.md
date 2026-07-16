@@ -4,6 +4,19 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.6.0] - 2026-07-15
+
+### Added
+
+- **`EXEC SQL` / `EXEC CICS` blocks** — parsed as pass-through blocks in both the Procedure Division and the Data Division (`INCLUDE SQLCA`, `DECLARE TABLE/CURSOR`). The interior is preserved completely verbatim: original columns, casing (immune to `keywordCase`), spacing, comments, and blank lines. Only the `EXEC` header and `END-EXEC` frame participate in COBOL indentation. SQL keywords like `DELETE` or `UPDATE` inside the block can no longer be mistaken for COBOL verbs.
+- **Copybook fragment formatting** — files without any division header (`.CPY` copybooks) are now detected and formatted by content kind: data entries (level hierarchy + PIC alignment), `SELECT` entries (FILE-CONTROL copybooks), or procedure statements. Previously every line fell through as an unparsed warning.
+- **Multi-line `COPY ... REPLACING`** — COPY statements spanning several lines are collected to the closing period and kept as one logical unit in the Data and Environment Divisions.
+- **`$` compiler directives** (ACUCOBOL `$XFD` etc.) — lines with `$` in column 7 are preserved verbatim; previously the `$` indicator was silently dropped.
+
+### Fixed
+
+- PIC/VALUE alignment is now capped at column 49 so a single long entry (e.g. a `REDEFINES` with a long name) no longer drags the whole group's PIC clauses into line-wrapping territory.
+
 ## [0.5.0] - 2026-07-15
 
 ### Added
