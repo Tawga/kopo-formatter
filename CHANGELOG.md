@@ -4,6 +4,18 @@ All notable changes to the "kopo-formatter" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.6.1] - 2026-07-16
+
+### Added
+
+- **No-code-loss guarantee** — after printing, a verifier tokenizes input and output and confirms every meaningful token of the input (words case-insensitively, string literals verbatim, comment lines) survives in order in the output. If anything would be lost, the formatter returns the **original text unchanged** with an `error` diagnostic describing the loss, and the VS Code extension shows a warning. Lossy output can no longer reach the document.
+- Five silent-drop sites in the parser/scanner now pass unrecognized lines through as `UnparsedLine` nodes with a `warning` diagnostic instead of dropping them: stray lines inside `EVALUATE`, the conditional-block no-progress guard, unattachable data-division continuation lines, malformed data entries, and orphan continuation lines with no preceding code line.
+
+### Fixed
+
+- **Explicit scope terminators keep their sentence period** — `END-IF.` / `END-CALL.` / `END-READ.` etc. were printed without the trailing period, silently changing sentence structure. The period is now preserved and correctly closes the sentence for the enclosing parser scopes. (Found by the new no-loss verifier on the test corpus.)
+- **Spaces inside string literals of data entries are preserved** — `VALUE 'A  B'` was collapsed to `VALUE 'A B'` by whitespace normalization; the data printer now uses the literal-aware space collapser.
+
 ## [0.6.0] - 2026-07-15
 
 ### Added

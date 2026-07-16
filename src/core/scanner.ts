@@ -11,7 +11,16 @@
 
 import { type SourceLine } from "./tokens.js";
 import { type SourceFormat } from "./formatDetector.js";
+import { type Diagnostic } from "./types.js";
 import { SEQ_NUMBER_END, PROGRAM_TEXT_END } from "./constants.js";
+
+export interface ScanOptions {
+    /** When false, never truncate cols 73-80 even if the file looks like it
+     *  has an identification area. Used when rescanning formatter output. */
+    stripIdArea?: boolean;
+    /** Collector for diagnostics emitted during scanning. */
+    diagnostics?: Diagnostic[];
+}
 
 /**
  * Expand tabs using 8-column tab stops (standard for fixed-form COBOL).
@@ -35,11 +44,11 @@ function expandTabs(line: string): string {
 /**
  * Scan raw source text into logical source lines.
  */
-export function scan(source: string, format: SourceFormat): SourceLine[] {
+export function scan(source: string, format: SourceFormat, opts: ScanOptions = {}): SourceLine[] {
     const rawLines = source.split(/\r?\n/);
 
     if (format === "fixed") {
-        return scanFixedForm(rawLines);
+        return scanFixedForm(rawLines, opts);
     } else {
         return scanFreeForm(rawLines);
     }
@@ -86,9 +95,9 @@ function openLiteralQuote(text: string): string | null {
     return quote;
 }
 
-function scanFixedForm(rawLines: string[]): SourceLine[] {
+function scanFixedForm(rawLines: string[], opts: ScanOptions = {}): SourceLine[] {
     const result: SourceLine[] = [];
-    const truncateIdArea = hasIdentificationArea(rawLines);
+    const truncateIdArea = opts.stripIdArea === false ? false : hasIdentificationArea(rawLines);
 
     for (let i = 0; i < rawLines.length; i++) {
         const expanded = expandTabs(rawLines[i]);
@@ -159,27 +168,43 @@ function scanFixedForm(rawLines: string[]): SourceLine[] {
                 : "";
 
             // Find the last non-comment, non-blank line to append to
-            if (result.length > 0) {
-                for (let j = result.length - 1; j >= 0; j--) {
-                    if (!result[j].isComment && !result[j].isBlank) {
-                        const prev = result[j];
-                        const quote = openLiteralQuote(prev.text);
-                        const contTrimmed = programText.trimStart();
-                        if (quote && contTrimmed.startsWith(quote)) {
-                            // Continued string literal: the previous line's text is part
-                            // of the literal through col 72 (short lines are space-padded,
-                            // as on punched cards), and the literal resumes with the
-                            // character right after the quote — no space is inserted.
-                            prev.text = prev.text.padEnd(TEXT_AREA_LEN, " ") + contTrimmed.substring(1);
-                        } else {
-                            // Word continuation: trim and join with a single space
-                            prev.text = prev.text.trimEnd() + " " + programText.trim();
-                        }
-                        break;
+            let merged = false;
+            for (let j = result.length - 1; j >= 0; j--) {
+                if (!result[j].isComment && !result[j].isBlank) {
+                    const prev = result[j];
+                    const quote = openLiteralQuote(prev.text);
+                    const contTrimmed = programText.trimStart();
+                    if (quote && contTrimmed.startsWith(quote)) {
+                        // Continued string literal: the previous line's text is part
+                        // of the literal through col 72 (short lines are space-padded,
+                        // as on punched cards), and the literal resumes with the
+                        // character right after the quote — no space is inserted.
+                        prev.text = prev.text.padEnd(TEXT_AREA_LEN, " ") + contTrimmed.substring(1);
+                    } else {
+                        // Word continuation: trim and join with a single space
+                        prev.text = prev.text.trimEnd() + " " + programText.trim();
                     }
+                    merged = true;
+                    break;
                 }
             }
-            // Don't add a new source line for continuations - they're merged
+            if (!merged) {
+                // Orphan continuation (no code line precedes it): keep it as a
+                // normal line rather than dropping the text.
+                opts.diagnostics?.push({
+                    severity: "warning",
+                    message: "Continuation line has no preceding code line to continue; kept as a normal line",
+                    line: i + 1,
+                });
+                result.push({
+                    text: programText,
+                    originalLine: i,
+                    isComment: false,
+                    isBlank: false,
+                    indicator: " ",
+                    originalText,
+                });
+            }
             continue;
         }
 

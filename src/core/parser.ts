@@ -94,7 +94,7 @@ export function parse(lines: SourceLine[], format: SourceFormat): SourceFile {
             state.diagnostics.push({
                 severity: "warning",
                 message: `Unrecognized line outside any division: "${line.text.trim().substring(0, 40)}"`,
-                line: line.originalLine,
+                line: line.originalLine + 1,
             });
             state.pos++;
         }

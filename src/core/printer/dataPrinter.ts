@@ -10,10 +10,11 @@ import {
     type CopyStatement,
     type Section,
     type Trivia,
+    type UnparsedLine,
 } from "../types.js";
 import { AREA_A_START } from "../constants.js";
 import { buildLine } from "../layout.js";
-import { applyCase, applyKeywordCase } from "../caseNormalizer.js";
+import { applyCase, applyKeywordCase, normalizeSpaces } from "../caseNormalizer.js";
 import { printExecBlock } from "./execPrinter.js";
 
 export interface AlignmentMap {
@@ -51,12 +52,13 @@ export function computeAlignment(
 }
 
 function collectAlignmentInfo(
-    entries: DataEntry[],
+    entries: (DataEntry | UnparsedLine)[],
     options: FormatterOptions,
     depth: number,
     picAlignment: Map<number, number>,
 ): void {
     for (const entry of entries) {
+        if (entry.kind === "UnparsedLine") continue;
         const indent = depth * options.indentationSpaces;
         const normalized = normalizeDataLine(entry);
 
@@ -78,6 +80,7 @@ function collectAlignmentInfo(
                 preClausePart = picIdx >= 0 ? entry.rawText.substring(0, picIdx).trim() : normalized;
             }
 
+            // Safe non-literal-aware collapse: text before PIC/VALUE cannot contain literals
             const normalizedPre = preClausePart.replace(/\s+/g, " ");
             const endColumn = (AREA_A_START - 1) + indent + normalizedPre.length;
 
@@ -128,7 +131,12 @@ export function printDataEntry(
 
     // Print children
     for (const child of entry.children) {
-        lines.push(...printDataEntry(child, depth + 1, options, format, alignment, sectionName));
+        if (child.kind === "UnparsedLine") {
+            lines.push(...printTrivia(child.leadingTrivia, format));
+            lines.push(buildLine(format, { areaA: true, content: child.rawText }));
+        } else {
+            lines.push(...printDataEntry(child, depth + 1, options, format, alignment, sectionName));
+        }
     }
 
     return lines;
@@ -177,6 +185,7 @@ function alignClause(
 
     const preClausePart = entry.rawText.substring(0, clauseIdx).trim();
     const postClausePart = entry.rawText.substring(clauseIdx).trim();
+    // Safe non-literal-aware collapse: text before PIC/VALUE cannot contain literals
     const normalizedPre = preClausePart.replace(/\s+/g, " ");
 
     const lineStart = " ".repeat(indent) + normalizedPre;
@@ -201,7 +210,12 @@ export function printFdEntry(
     lines.push(buildLine(format, { areaA: true, content: applyCase(fd.rawText, options) }));
 
     for (const record of fd.records) {
-        lines.push(...printDataEntry(record, 0, options, format, alignment, "FILE"));
+        if (record.kind === "UnparsedLine") {
+            lines.push(...printTrivia(record.leadingTrivia, format));
+            lines.push(buildLine(format, { areaA: true, content: record.rawText }));
+        } else {
+            lines.push(...printDataEntry(record, 0, options, format, alignment, "FILE"));
+        }
     }
 
     return lines;
@@ -275,7 +289,8 @@ export function printDataSection(
 }
 
 function normalizeDataLine(entry: DataEntry): string {
-    return entry.rawText.replace(/\s+/g, " ").trim();
+    // Literal-aware: spaces inside '...'/"..." (e.g. VALUE 'A  B') must survive
+    return normalizeSpaces(entry.rawText.trim());
 }
 
 export function printTrivia(trivia: Trivia[], format: SourceFormat): string[] {

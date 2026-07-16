@@ -61,7 +61,7 @@ export interface DataEntry {
     clauses: DataClause[];
     /** The full original text of this entry (all tokens joined) */
     rawText: string;
-    children: DataEntry[];
+    children: (DataEntry | UnparsedLine)[];
     leadingTrivia: Trivia[];
 }
 
@@ -74,7 +74,7 @@ export interface FdEntry {
     kind: "FdEntry";
     name: string;
     rawText: string;
-    records: DataEntry[];
+    records: (DataEntry | UnparsedLine)[];
     leadingTrivia: Trivia[];
 }
 
@@ -137,6 +137,8 @@ export interface IfStatement {
     endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-IF */
     periodTerminated?: boolean;
+    /** True when the explicit END-IF line carried the sentence period ("END-IF.") */
+    endTerminatorPeriod?: boolean;
 }
 
 export interface EvaluateStatement {
@@ -148,6 +150,8 @@ export interface EvaluateStatement {
     endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-EVALUATE */
     periodTerminated?: boolean;
+    /** True when the explicit END-EVALUATE line carried the sentence period */
+    endTerminatorPeriod?: boolean;
 }
 
 export interface WhenBranch {
@@ -166,6 +170,8 @@ export interface PerformBlock {
     endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-PERFORM */
     periodTerminated?: boolean;
+    /** True when the explicit END-PERFORM line carried the sentence period */
+    endTerminatorPeriod?: boolean;
 }
 
 /** One conditional clause of a ConditionalBlock (AT END, ON SIZE ERROR, WHEN ..., etc.) */
@@ -200,6 +206,8 @@ export interface ConditionalBlock {
     endTerminatorTrivia?: Trivia[];
     /** True when the block was closed by a period rather than END-xxx */
     periodTerminated?: boolean;
+    /** True when the explicit END-xxx line carried the sentence period ("END-READ.") */
+    endTerminatorPeriod?: boolean;
     leadingTrivia: Trivia[];
 }
 
@@ -293,7 +301,7 @@ export type TopLevelNode =
 
 export interface Diagnostic {
     /** Severity of the diagnostic */
-    severity: "warning" | "info";
+    severity: "error" | "warning" | "info";
     /** Human-readable message */
     message: string;
     /** 1-based line number in the original source */

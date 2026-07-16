@@ -221,7 +221,8 @@ function printIfStatement(
 
     // END-IF only when block-structured (not period-terminated by either branch)
     if (!stmt.periodTerminated) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c("END-IF", options) }));
+        const period = stmt.endTerminatorPeriod ? "." : "";
+        lines.push(buildLine(format, { areaA: false, indent, content: c("END-IF", options) + period }));
     }
 
     return lines;
@@ -257,7 +258,8 @@ function printEvaluateStatement(
 
     // END-EVALUATE only when block-structured (not closed by a period)
     if (!stmt.periodTerminated) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c("END-EVALUATE", options) }));
+        const period = stmt.endTerminatorPeriod ? "." : "";
+        lines.push(buildLine(format, { areaA: false, indent, content: c("END-EVALUATE", options) + period }));
     }
 
     return lines;
@@ -284,7 +286,8 @@ function printPerformBlock(
 
     // END-PERFORM only when block-structured (not closed by a period)
     if (!stmt.periodTerminated) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c("END-PERFORM", options) }));
+        const period = stmt.endTerminatorPeriod ? "." : "";
+        lines.push(buildLine(format, { areaA: false, indent, content: c("END-PERFORM", options) + period }));
     }
 
     return lines;
@@ -330,7 +333,8 @@ function printConditionalBlock(
 
     // Emit END-xxx only when the block was not already closed by a period
     if (!stmt.periodTerminated) {
-        lines.push(buildLine(format, { areaA: false, indent, content: c(stmt.endTerminator, options) }));
+        const period = stmt.endTerminatorPeriod ? "." : "";
+        lines.push(buildLine(format, { areaA: false, indent, content: c(stmt.endTerminator, options) + period }));
     }
 
     return lines;

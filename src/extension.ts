@@ -104,6 +104,11 @@ export function activate(context: vscode.ExtensionContext): void {
                     for (const diag of result.diagnostics) {
                         outputChannel.appendLine(`[${diag.severity}] Line ${diag.line}: ${diag.message}`);
                     }
+                    if (result.diagnostics.some(d => d.severity === "error")) {
+                        vscode.window.showWarningMessage(
+                            "KOPO Formatter: no-loss verification failed — the document was left unchanged. See the KOPO Formatter output channel for details.",
+                        );
+                    }
                     return minimalEdits(document, result.text);
                 } catch (err) {
                     const message = err instanceof Error ? err.message : String(err);

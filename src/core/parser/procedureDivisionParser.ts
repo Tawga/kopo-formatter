@@ -17,6 +17,7 @@ import {
     type ConditionalClause,
     type Declaratives,
     type Trivia,
+    type UnparsedLine,
 } from "../types.js";
 import {
     AREA_B_STATEMENTS,
@@ -262,17 +263,17 @@ function parseStatementSequence(
             const stmt = parseIfStatement(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
+            if (stmt.periodTerminated || stmt.endTerminatorPeriod) return { stmts, periodTerminated: true };
         } else if (verb === "EVALUATE") {
             const stmt = parseEvaluateStatement(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
+            if (stmt.periodTerminated || stmt.endTerminatorPeriod) return { stmts, periodTerminated: true };
         } else if (verb === "PERFORM" && isBlockPerform(upper)) {
             const stmt = parsePerformBlock(state, rawText, currentTrivia);
             stmts.push(stmt);
             currentTrivia = [];
-            if (stmt.periodTerminated) return { stmts, periodTerminated: true };
+            if (stmt.periodTerminated || stmt.endTerminatorPeriod) return { stmts, periodTerminated: true };
         } else if (verb === "EXEC") {
             const stmt = parseExecBlock(state, rawText, currentTrivia);
             stmts.push(stmt);
@@ -421,10 +422,12 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
 
     // Consume END-IF if present (peeking past any comments before it)
     let endTerminatorTrivia: Trivia[] | undefined;
+    let endTerminatorPeriod = false;
     const endPeek = peekPastTrivia(state);
     if (endPeek.nextUpper.startsWith("END-IF")) {
         const trivia = consumeTrivia(state);
         if (trivia.length > 0) endTerminatorTrivia = trivia;
+        endTerminatorPeriod = state.lines[state.pos].text.trimEnd().endsWith(".");
         state.pos++;
     }
 
@@ -437,21 +440,29 @@ function parseIfStatement(state: ParserState, headerText: string, leadingTrivia:
         elseLeadingTrivia,
         endTerminatorTrivia,
         periodTerminated: false,
+        endTerminatorPeriod,
     };
 }
 
 function parseEvaluateStatement(state: ParserState, headerText: string, leadingTrivia: Trivia[]): EvaluateStatement {
-    const subjectText = headerText;
+    let subjectText = headerText;
     const whenBranches: WhenBranch[] = [];
     let periodTerminated = false;
     let endTerminatorTrivia: Trivia[] | undefined;
+    let endTerminatorPeriod = false;
+    // Trivia consumed alongside a subject continuation line, waiting for the
+    // next construct (WHEN branch / END-EVALUATE) to attach to.
+    let carriedTrivia: Trivia[] = [];
 
     while (state.pos < state.lines.length && !isAtDivisionHeader(state)) {
         const trivia = consumeTrivia(state);
         const upper = peekUpperText(state);
 
         if (upper.startsWith("END-EVALUATE")) {
-            if (trivia.length > 0) endTerminatorTrivia = trivia;
+            const endTrivia = [...carriedTrivia, ...trivia];
+            if (endTrivia.length > 0) endTerminatorTrivia = endTrivia;
+            carriedTrivia = [];
+            endTerminatorPeriod = state.lines[state.pos].text.trimEnd().endsWith(".");
             state.pos++;
             break;
         }
@@ -468,8 +479,9 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
                 kind: "WhenBranch",
                 conditionText,
                 body: bodyResult.stmts,
-                leadingTrivia: trivia,
+                leadingTrivia: [...carriedTrivia, ...trivia],
             });
+            carriedTrivia = [];
 
             // A period inside a WHEN body closes the EVALUATE (legacy style,
             // no END-EVALUATE follows).
@@ -480,16 +492,65 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
         } else if (!upper) {
             break;
         } else {
-            // Unexpected content — stop at structural boundaries; otherwise skip.
-            if (isParagraphName(upper) || /^\S+\s+SECTION\.?$/.test(upper)) {
+            // Unexpected content — stop at structural boundaries; otherwise
+            // keep the line rather than dropping it.
+            if (isParagraphName(upper) || /^\S+\s+SECTION\.?$/.test(upper)
+                || upper.startsWith("END DECLARATIVES") || isDivisionHeaderText(upper)) {
                 // Don't consume trivia — rewind so the outer parser picks it up.
                 // (trivia was already consumed above, so we must put it back here
                 //  as an exception; this path is rare error-recovery.)
                 state.pos -= trivia.length;
                 break;
             }
-            state.pos++;
+
+            if (whenBranches.length > 0) {
+                // Content resuming the last WHEN body (e.g. after an
+                // interrupting comment) — parse it into that body.
+                const last = whenBranches[whenBranches.length - 1];
+                const merged = [...carriedTrivia, ...trivia];
+                carriedTrivia = [];
+                const posBefore = state.pos;
+                const r = parseStatementSequence(state, merged, ["WHEN", "WHEN OTHER", "END-EVALUATE"]);
+                last.body.push(...r.stmts);
+                if (r.periodTerminated) {
+                    periodTerminated = true;
+                    break;
+                }
+                if (state.pos === posBefore) {
+                    // Defensive: no progress — keep the line as passthrough
+                    const line = state.lines[state.pos];
+                    state.diagnostics.push({
+                        severity: "warning",
+                        message: `Unrecognized line inside EVALUATE kept as-is: "${line.text.trim().substring(0, 40)}"`,
+                        line: line.originalLine + 1,
+                    });
+                    last.body.push({
+                        kind: "UnparsedLine",
+                        rawText: line.text.trim(),
+                        originalLine: line.originalLine,
+                        leadingTrivia: r.stmts.length === 0 ? merged : [],
+                    } satisfies UnparsedLine);
+                    state.pos++;
+                }
+            } else {
+                // Between EVALUATE and the first WHEN — treat as a subject
+                // continuation; its trivia rides along to the next construct.
+                const line = state.lines[state.pos];
+                state.diagnostics.push({
+                    severity: "warning",
+                    message: `Line before first WHEN joined to EVALUATE subject: "${line.text.trim().substring(0, 40)}"`,
+                    line: line.originalLine + 1,
+                });
+                subjectText += " " + line.text.trim();
+                carriedTrivia.push(...trivia);
+                state.pos++;
+            }
         }
+    }
+
+    // Trivia still carried at loop end (e.g. EOF without END-EVALUATE)
+    if (carriedTrivia.length > 0) {
+        endTerminatorTrivia = [...(endTerminatorTrivia ?? []), ...carriedTrivia];
     }
 
     return {
@@ -499,6 +560,7 @@ function parseEvaluateStatement(state: ParserState, headerText: string, leadingT
         leadingTrivia,
         endTerminatorTrivia,
         periodTerminated,
+        endTerminatorPeriod,
     };
 }
 
@@ -521,10 +583,12 @@ function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia
 
     let periodTerminated = false;
     let endTerminatorTrivia: Trivia[] | undefined;
+    let endTerminatorPeriod = false;
     const endPeek = peekPastTrivia(state);
     if (endPeek.nextUpper.startsWith("END-PERFORM")) {
         const trivia = consumeTrivia(state);
         if (trivia.length > 0) endTerminatorTrivia = trivia;
+        endTerminatorPeriod = state.lines[state.pos].text.trimEnd().endsWith(".");
         state.pos++;
     } else if (bodyResult.periodTerminated) {
         // Legacy style: a period inside the body closed the PERFORM and
@@ -539,6 +603,7 @@ function parsePerformBlock(state: ParserState, headerText: string, leadingTrivia
         leadingTrivia,
         endTerminatorTrivia,
         periodTerminated,
+        endTerminatorPeriod,
     };
 }
 
@@ -682,7 +747,7 @@ function parseConditionalStatement(
             leadingTrivia,
         };
         parseClauseLines(state, block, cfg, terminators);
-        return { stmt: block, periodTerminated: block.periodTerminated === true };
+        return { stmt: block, periodTerminated: block.periodTerminated === true || block.endTerminatorPeriod === true };
     }
 
     const stmt: SimpleStatement = { kind: "SimpleStatement", verb, rawText: headerText, leadingTrivia };
@@ -749,7 +814,7 @@ function parseInlineConditionalBlock(
     }
 
     parseClauseLines(state, block, cfg, terminators);
-    return { stmt: block, periodTerminated: block.periodTerminated === true };
+    return { stmt: block, periodTerminated: block.periodTerminated === true || block.endTerminatorPeriod === true };
 }
 
 /**
@@ -771,6 +836,7 @@ function parseClauseLines(
         if (clauseStartRegex(block.endTerminator).test(peek.nextUpper)) {
             const endTrivia = consumeTrivia(state);
             if (endTrivia.length > 0) block.endTerminatorTrivia = endTrivia;
+            block.endTerminatorPeriod = state.lines[state.pos].text.trimEnd().endsWith(".");
             state.pos++;
             break;
         }
@@ -825,9 +891,27 @@ function parseClauseLines(
             break;
         }
 
-        // Safety: never loop without progress.
+        // Safety: never loop without progress — keep the stuck line rather
+        // than dropping it. (Only reachable from the clause-body arm above,
+        // so the current line is non-trivia and a clause exists.)
         if (state.pos === posBefore) {
-            state.pos++;
+            const stuck = state.lines[state.pos];
+            if (stuck && !stuck.isComment && !stuck.isBlank && block.clauses.length > 0) {
+                state.diagnostics.push({
+                    severity: "warning",
+                    message: `Unrecognized line inside ${block.verb} block kept as-is: "${stuck.text.trim().substring(0, 40)}"`,
+                    line: stuck.originalLine + 1,
+                });
+                block.clauses[block.clauses.length - 1].body.push({
+                    kind: "UnparsedLine",
+                    rawText: stuck.text.trim(),
+                    originalLine: stuck.originalLine,
+                    leadingTrivia: [],
+                } satisfies UnparsedLine);
+                state.pos++;
+            } else {
+                break;
+            }
         }
     }
 }

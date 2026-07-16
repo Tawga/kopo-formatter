@@ -10,6 +10,7 @@ import {
     type DivisionChild,
     type DataEntry,
     type Trivia,
+    type UnparsedLine,
 } from "./types.js";
 import { buildLine } from "./layout.js";
 import { applyCase } from "./caseNormalizer.js";
@@ -390,6 +391,8 @@ function printGenericChild(child: DivisionChild, format: SourceFormat, options?:
 function collectAllDataEntries(children: DivisionChild[]): DataEntry[] {
     const entries: DataEntry[] = [];
 
+    const isDataEntry = (r: DataEntry | UnparsedLine): r is DataEntry => r.kind === "DataEntry";
+
     for (const child of children) {
         if (child.kind === "DataEntry") {
             entries.push(child);
@@ -398,11 +401,11 @@ function collectAllDataEntries(children: DivisionChild[]): DataEntry[] {
                 if (subChild.kind === "DataEntry") {
                     entries.push(subChild);
                 } else if (subChild.kind === "FdEntry") {
-                    entries.push(...subChild.records);
+                    entries.push(...subChild.records.filter(isDataEntry));
                 }
             }
         } else if (child.kind === "FdEntry") {
-            entries.push(...child.records);
+            entries.push(...child.records.filter(isDataEntry));
         }
     }
 

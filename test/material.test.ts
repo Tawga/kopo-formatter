@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { format } from "../src/core/index.js";
+import { format, formatWithDiagnostics, verifyNoTokenLoss, type FormatterOptions } from "../src/core/index.js";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -53,5 +53,31 @@ describe.each(FILES)("material file: %s", (filename) => {
             const indicator = line.length > 6 ? line[6] : " ";
             expect(VALID_INDICATORS.has(indicator)).toBe(true);
         }
+    });
+
+    // The no-loss guarantee, across the option matrix: formatting must never
+    // fall back (no "error" diagnostics) AND the produced output must pass an
+    // independent verification against the input.
+    const OPTION_MATRIX: [string, Partial<FormatterOptions>][] = [
+        ["defaults", {}],
+        ["keywordCase upper", { keywordCase: "upper" }],
+        ["keywordCase lower", { keywordCase: "lower" }],
+        ["no PIC alignment", { alignPicClauses: false }],
+        ["no line wrapping", { wrapLongLines: false }],
+        ["omit continuation lines", { omitContinuationLines: true }],
+        ["empty lines after division/section", { addEmptyLineAfterDivision: true, addEmptyLineAfterSection: true }],
+        ["delimited-by + uppercase names", { alignDelimitedBy: true, uppercaseProcedureNames: true }],
+        ["no whitespace normalization", { normalizeWhitespace: false }],
+    ];
+
+    it.each(OPTION_MATRIX)("loses no tokens with options: %s", (_label, opts) => {
+        const source = fs.readFileSync(
+            path.join(MATERIAL_DIR, filename),
+            "utf8",
+        );
+        const r = formatWithDiagnostics(source, { sourceFormat: "fixed", ...opts });
+        expect(r.diagnostics.filter(d => d.severity === "error")).toEqual([]);
+        const v = verifyNoTokenLoss(source, r.text, "fixed");
+        expect(v.diagnostics).toEqual([]);
     });
 });

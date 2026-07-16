@@ -188,11 +188,7 @@ function parseFdEntry(state: ParserState, leadingTrivia: import("../types.js").T
 
         if (/^\d{2}\s/.test(upper) || /^\d{2}$/.test(upper)) {
             const entries = parseDataEntries(state, trivia);
-            for (const entry of entries) {
-                if (entry.kind === "DataEntry") {
-                    fd.records.push(entry);
-                }
-            }
+            fd.records.push(...entries);
         } else {
             break;
         }
@@ -205,14 +201,13 @@ function parseFdEntry(state: ParserState, leadingTrivia: import("../types.js").T
  * Parse a sequence of data entries and build the level hierarchy.
  * Returns top-level entries (children are nested inside).
  */
-function parseDataEntries(state: ParserState, initialTrivia: import("../types.js").Trivia[]): DataEntry[] {
-    const allEntries: DataEntry[] = [];
+function parseDataEntries(state: ParserState, initialTrivia: import("../types.js").Trivia[]): (DataEntry | UnparsedLine)[] {
+    const allEntries: (DataEntry | UnparsedLine)[] = [];
     let firstTrivia = initialTrivia;
 
     // Parse the first entry
     if (state.pos < state.lines.length) {
-        const entry = parseSingleDataEntry(state, firstTrivia);
-        if (entry) allEntries.push(entry);
+        allEntries.push(parseSingleDataEntry(state, firstTrivia));
     }
 
     // Parse subsequent entries at the same or deeper level
@@ -233,14 +228,26 @@ function parseDataEntries(state: ParserState, initialTrivia: import("../types.js
         const upper = peekUpperText(state);
 
         if (/^\d{2}\s/.test(upper) || /^\d{2}$/.test(upper)) {
-            const entry = parseSingleDataEntry(state, trivia);
-            if (entry) allEntries.push(entry);
+            allEntries.push(parseSingleDataEntry(state, trivia));
         } else {
-            // Continuation line or other - just consume
             const line = state.lines[state.pos];
-            // Append to previous entry if possible
-            if (allEntries.length > 0) {
-                allEntries[allEntries.length - 1].rawText += " " + line.text.trim();
+            const prev = allEntries.length > 0 ? allEntries[allEntries.length - 1] : undefined;
+            if (prev && prev.kind === "DataEntry" && !prev.rawText.endsWith(".") && trivia.length === 0) {
+                // Genuine continuation of the previous (unterminated) entry
+                prev.rawText += " " + line.text.trim();
+            } else {
+                // Not attachable — keep the line (and its trivia) as passthrough
+                state.diagnostics.push({
+                    severity: "warning",
+                    message: `Unrecognized line in data division kept as-is: "${line.text.trim().substring(0, 40)}"`,
+                    line: line.originalLine + 1,
+                });
+                allEntries.push({
+                    kind: "UnparsedLine",
+                    rawText: line.text.trim(),
+                    originalLine: line.originalLine,
+                    leadingTrivia: trivia,
+                } satisfies UnparsedLine);
             }
             state.pos++;
         }
@@ -250,7 +257,7 @@ function parseDataEntries(state: ParserState, initialTrivia: import("../types.js
     return buildDataHierarchy(allEntries);
 }
 
-function parseSingleDataEntry(state: ParserState, leadingTrivia: import("../types.js").Trivia[]): DataEntry | null {
+function parseSingleDataEntry(state: ParserState, leadingTrivia: import("../types.js").Trivia[]): DataEntry | UnparsedLine {
     const line = state.lines[state.pos];
     let rawText = line.text.trim();
     state.pos++;
@@ -269,7 +276,20 @@ function parseSingleDataEntry(state: ParserState, leadingTrivia: import("../type
 
     // Parse the level number and name
     const match = rawText.match(/^(\d{2})\s+(\S+)/);
-    if (!match) return null;
+    if (!match) {
+        // Doesn't parse as a data entry — keep the consumed text as passthrough
+        state.diagnostics.push({
+            severity: "warning",
+            message: `Malformed data entry kept as-is: "${rawText.substring(0, 40)}"`,
+            line: line.originalLine + 1,
+        });
+        return {
+            kind: "UnparsedLine",
+            rawText,
+            originalLine: line.originalLine,
+            leadingTrivia,
+        };
+    }
 
     const level = parseInt(match[1], 10);
     const name = match[2].replace(/\.$/, "");
@@ -356,13 +376,24 @@ function extractClauses(rawText: string, afterNamePos: number): DataClause[] {
 /**
  * Build a hierarchy of DataEntry nodes from a flat list using level numbers.
  */
-function buildDataHierarchy(entries: DataEntry[]): DataEntry[] {
+function buildDataHierarchy(entries: (DataEntry | UnparsedLine)[]): (DataEntry | UnparsedLine)[] {
     if (entries.length === 0) return [];
 
-    const roots: DataEntry[] = [];
+    const roots: (DataEntry | UnparsedLine)[] = [];
     const stack: DataEntry[] = [];
 
     for (const entry of entries) {
+        // Unparsed passthrough lines stay where they are in source order,
+        // attached to the innermost open entry; they never affect the stack.
+        if (entry.kind === "UnparsedLine") {
+            if (stack.length > 0) {
+                stack[stack.length - 1].children.push(entry);
+            } else {
+                roots.push(entry);
+            }
+            continue;
+        }
+
         // Pop stack until we find a parent (lower level number)
         while (stack.length > 0 && stack[stack.length - 1].level >= entry.level) {
             stack.pop();
